@@ -4,8 +4,11 @@ import { useState } from "react"
 import Link from "next/link"
 import { Menu, X, Search, ShoppingBag, User } from "lucide-react"
 
+import { useCart } from "@/contexts/cart-context"
+
 export function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
+  const { count } = useCart()
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -62,16 +65,19 @@ export function Navbar() {
             >
               <User className="w-5 h-5" />
             </button>
-            <button
-              type="button"
-              className="p-2 text-foreground hover:text-gold transition-colors relative min-h-11 min-w-11 flex items-center justify-center"
-              aria-label="Shopping bag"
+            <Link
+              href="/cart"
+              className="p-2 text-foreground hover:text-gold transition-colors relative min-h-11 min-w-11 flex items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              aria-label={`Shopping bag, ${count} item${count === 1 ? "" : "s"}`}
             >
               <ShoppingBag className="w-5 h-5" />
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-gold text-primary-foreground text-[10px] rounded-full flex items-center justify-center">
-                0
+              <span
+                className="absolute -top-0.5 -right-0.5 min-h-[1.125rem] min-w-[1.125rem] px-0.5 bg-gold text-primary-foreground text-[10px] font-medium leading-none rounded-full flex items-center justify-center tabular-nums"
+                aria-hidden
+              >
+                {count > 99 ? "99+" : count}
               </span>
-            </button>
+            </Link>
           </div>
         </div>
       </div>

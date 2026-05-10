@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 import { Minus, Plus } from "lucide-react"
 
 import { ShopProductCard } from "@/components/shop/shop-product-card"
+import { useCart } from "@/contexts/cart-context"
 import {
   APPAREL_SIZES,
   CATEGORY_TAGLINES,
@@ -23,6 +24,7 @@ export function ProductDetailClient({
   product,
   related,
 }: ProductDetailClientProps) {
+  const { addProduct } = useCart()
   const [imageIndex, setImageIndex] = useState(0)
   const [size, setSize] = useState<ApparelSize | null>(() =>
     product.hasSizes ? "M" : null,
@@ -201,6 +203,13 @@ export function ProductDetailClient({
                   sizeLabel
                     ? `Add to cart, ${sizeLabel}, quantity ${qty}`
                     : `Add to cart, quantity ${qty}`
+                }
+                onClick={() =>
+                  addProduct({
+                    product,
+                    quantity: qty,
+                    size: product.hasSizes ? size : null,
+                  })
                 }
               >
                 Add to cart

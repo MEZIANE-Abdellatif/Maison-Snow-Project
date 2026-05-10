@@ -1,6 +1,8 @@
 import type { Metadata } from 'next'
 import { Cormorant_Garamond, Montserrat } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+
+import { Providers } from '@/components/providers'
 import './globals.css'
 
 const cormorant = Cormorant_Garamond({ 
@@ -49,7 +51,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${cormorant.variable} ${montserrat.variable}`}>
       <body className="font-sans antialiased bg-background">
-        {children}
+        <Providers>{children}</Providers>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

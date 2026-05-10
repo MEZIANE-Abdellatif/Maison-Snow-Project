@@ -1,64 +1,66 @@
+"use client"
+
 import Image from "next/image"
 import Link from "next/link"
 
 import { cn } from "@/lib/utils"
+import { useCart } from "@/contexts/cart-context"
 import { CATEGORY_TAGLINES, formatPrice, type ShopProduct } from "@/lib/shop-data"
 
-type ShopProductCardProps = {
+export type ShopProductCardProps = {
   product: ShopProduct
+  /** When set, opening the add flow also notifies parent (shop listing → confirmation modal). */
+  onAddedToCart?: (product: ShopProduct) => void
 }
 
 function CardActions({
+  slug,
   product,
-  layout,
+  onAddedToCart,
 }: {
+  slug: string
   product: ShopProduct
-  layout: "overlay" | "inline"
+  onAddedToCart?: (product: ShopProduct) => void
 }) {
-  const detailHref = `/product/${product.slug}`
-  const baseBtn =
-    "min-h-11 text-xs tracking-widest uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2"
+  const { addProduct } = useCart()
+  const detailHref = `/product/${slug}`
+
+  const actionBtn =
+    "flex h-9 min-h-9 min-w-0 flex-1 cursor-pointer items-center justify-center rounded-sm px-1 text-[10px] font-medium tracking-widest uppercase transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-1 sm:h-10 sm:min-h-10 sm:px-2 sm:text-[11px]"
+
+  const handleAdd = () => {
+    addProduct({ product, quantity: 1 })
+    onAddedToCart?.(product)
+  }
 
   return (
-    <div
-      className={cn(
-        "flex gap-2",
-        layout === "overlay" &&
-          "w-full max-w-[220px] flex-col sm:max-w-none sm:flex-row sm:justify-center",
-        layout === "inline" && "flex-col sm:flex-row",
-      )}
-    >
+    <div className="mx-auto flex w-full max-w-[min(100%,17rem)] flex-row items-stretch gap-1.5 sm:max-w-none sm:gap-2">
       <button
         type="button"
-        className={cn(
-          baseBtn,
-          "bg-primary px-3 text-primary-foreground hover:bg-primary/90 sm:flex-none sm:px-4",
-          layout === "overlay" && "flex-1",
-          layout === "inline" && "w-full sm:w-auto sm:flex-1",
-        )}
+        className={cn(actionBtn, "bg-primary text-primary-foreground hover:bg-primary/90")}
+        onClick={handleAdd}
       >
-        Add to cart
+        Add to Cart
       </button>
       <Link
         href={detailHref}
         className={cn(
-          baseBtn,
-          "inline-flex flex-1 items-center justify-center border-2 border-primary bg-background/95 px-3 text-center font-medium text-primary hover:bg-primary hover:text-primary-foreground sm:flex-none sm:px-4",
-          layout === "inline" && "w-full sm:w-auto",
+          actionBtn,
+          "border border-primary bg-background/95 text-primary hover:bg-primary hover:text-primary-foreground",
         )}
       >
-        Show details
+        Quick View
       </Link>
     </div>
   )
 }
 
-export function ShopProductCard({ product }: ShopProductCardProps) {
+export function ShopProductCard({ product, onAddedToCart }: ShopProductCardProps) {
   const detailHref = `/product/${product.slug}`
 
   return (
-    <article className="group rounded-sm">
-      <div className="relative aspect-[3/4] overflow-hidden bg-card lg:mb-4">
+    <article className="group rounded-sm border border-transparent">
+      <div className="relative aspect-[3/4] overflow-hidden rounded-sm bg-card lg:mb-4">
         <Image
           src={product.image}
           alt=""
@@ -67,17 +69,15 @@ export function ShopProductCard({ product }: ShopProductCardProps) {
           className="object-cover transition-transform duration-500 lg:group-hover:scale-[1.04]"
           aria-hidden
         />
-        {/* lg+: hover overlay — pointer events only while hovered */}
-        <div className="pointer-events-none absolute inset-0 hidden opacity-0 transition-opacity duration-300 group-hover:pointer-events-auto group-hover:opacity-100 bg-primary/20 p-3 lg:flex lg:items-center lg:justify-center">
-          <div className="pointer-events-auto">
-            <CardActions product={product} layout="overlay" />
+        <div className="pointer-events-none absolute inset-0 hidden opacity-0 transition-opacity duration-300 group-hover:pointer-events-auto group-hover:opacity-100 bg-black/40 p-3 sm:p-4 lg:flex lg:items-center lg:justify-center">
+          <div className="pointer-events-auto w-full px-1">
+            <CardActions slug={product.slug} product={product} onAddedToCart={onAddedToCart} />
           </div>
         </div>
       </div>
 
-      {/* &lt;lg: actions always visible under image */}
-      <div className="mb-4 border-b border-border bg-card px-2 py-3 lg:hidden">
-        <CardActions product={product} layout="inline" />
+      <div className="mb-4 flex justify-center rounded-sm border border-border bg-card px-2 py-2.5 sm:px-3 sm:py-3 lg:hidden">
+        <CardActions slug={product.slug} product={product} onAddedToCart={onAddedToCart} />
       </div>
 
       <div className="text-center space-y-1">

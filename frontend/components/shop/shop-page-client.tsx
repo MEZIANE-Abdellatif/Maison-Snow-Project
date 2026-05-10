@@ -12,6 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { AddedToCartModal } from "@/components/shop/added-to-cart-modal"
 import { ShopProductCard } from "@/components/shop/shop-product-card"
 import {
   CATEGORY_TAGLINES,
@@ -52,6 +53,7 @@ export function ShopPageClient() {
   const searchParams = useSearchParams()
   const category = parseCategoryParam(searchParams.get("category"))
   const [sort, setSort] = useState<SortKey>("newest")
+  const [addedProduct, setAddedProduct] = useState<ShopProduct | null>(null)
 
   const setCategory = useCallback(
     (slug: CategorySlug) => {
@@ -91,6 +93,10 @@ export function ShopPageClient() {
 
   return (
     <>
+      <AddedToCartModal
+        product={addedProduct}
+        onClose={() => setAddedProduct(null)}
+      />
       <header className="border-b border-border bg-cream-dark/50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-12 md:pt-32 md:pb-16 text-center">
           <span className="text-gold tracking-[0.3em] text-xs uppercase block mb-3">
@@ -182,7 +188,10 @@ export function ShopPageClient() {
             <ul className="grid grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 list-none p-0 m-0">
               {sorted.map((product) => (
                 <li key={product.id}>
-                  <ShopProductCard product={product} />
+                  <ShopProductCard
+                    product={product}
+                    onAddedToCart={setAddedProduct}
+                  />
                 </li>
               ))}
             </ul>
