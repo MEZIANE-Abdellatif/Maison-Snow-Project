@@ -15,14 +15,19 @@ export function LoginPageClient() {
     () => sanitizeReturnUrl(searchParams.get("returnUrl")),
     [searchParams],
   )
+  const isSignup = searchParams.get("intent") === "signup"
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-28 pb-24 md:pt-32">
       <div className="mx-auto max-w-md text-center">
         <span className="text-gold tracking-[0.3em] text-xs uppercase block mb-3">Maison Snow</span>
-        <h1 className="font-serif text-3xl tracking-wide text-foreground md:text-4xl mb-4">Sign in</h1>
+        <h1 className="font-serif text-3xl tracking-wide text-foreground md:text-4xl mb-4">
+          {isSignup ? "Create an account" : "Sign in"}
+        </h1>
         <p className="text-sm text-muted-foreground leading-relaxed mb-10">
-          Authentication is not wired yet. Use the link below to return to checkout and continue as a guest.
+          {isSignup
+            ? "Registration is not wired yet. Return to checkout to finish your order as a guest, or go back when accounts are available."
+            : "Authentication is not wired yet. Use the link below to return to checkout and continue as a guest."}
         </p>
         <Link
           href={returnUrl}

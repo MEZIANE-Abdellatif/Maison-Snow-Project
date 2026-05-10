@@ -2,8 +2,10 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { useMemo, useState } from "react"
-import { Check, Lock } from "lucide-react"
+import { Fragment, useMemo, useState } from "react"
+import { Check, Loader2, Lock } from "lucide-react"
+
+import { checkEmail } from "@/lib/checkout-mock-email"
 
 import {
   OrderSummaryPanel,
@@ -37,23 +39,29 @@ function emailLooksValid(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 }
 
+type EmailUiState = "collect" | "checking" | "signin"
+
 function CheckoutProgress({ step }: { step: number }) {
   return (
     <nav aria-label="Checkout progress" className="mb-10 md:mb-14">
-      <ol className="mx-auto flex max-w-4xl items-center px-1">
+      <ol className="mx-auto flex max-w-4xl list-none items-start justify-center gap-0 p-0 px-1">
         {STEPS.map((s, i) => {
           const done = step === 3 || i < step
           const current = step < 3 && i === step
 
           return (
-            <li key={s.id} className="flex min-w-0 flex-1 items-center">
+            <Fragment key={s.id}>
               {i > 0 ? (
-                <div
-                  className={`mx-1 h-0.5 min-w-[8px] flex-1 sm:mx-2 ${step > i - 1 || step === 3 ? "bg-gold" : "bg-border"}`}
+                <li
                   aria-hidden
-                />
+                  className="flex h-9 min-h-9 min-w-0 flex-1 list-none items-center px-1 sm:px-2"
+                >
+                  <div
+                    className={`h-0.5 w-full rounded-full ${step > i - 1 || step === 3 ? "bg-gold" : "bg-border"}`}
+                  />
+                </li>
               ) : null}
-              <div className="flex w-16 shrink-0 flex-col items-center gap-2 sm:w-20">
+              <li className="flex w-[4.5rem] shrink-0 list-none flex-col items-center gap-2 sm:w-24">
                 <span
                   className={`flex h-9 w-9 items-center justify-center rounded-full border-2 text-[11px] font-semibold tabular-nums transition-colors ${
                     done
@@ -74,8 +82,8 @@ function CheckoutProgress({ step }: { step: number }) {
                   <span className="hidden sm:inline">{s.label}</span>
                   <span className="sm:hidden">{s.label.split(" ")[0]}</span>
                 </span>
-              </div>
-            </li>
+              </li>
+            </Fragment>
           )
         })}
       </ol>
@@ -109,6 +117,9 @@ export function CheckoutPageClient() {
   const { lines } = useCart()
   const [step, setStep] = useState(0)
   const [email, setEmail] = useState("")
+  const [emailUi, setEmailUi] = useState<EmailUiState>("collect")
+  const [welcomeName, setWelcomeName] = useState<string | null>(null)
+  const [password, setPassword] = useState("")
   const [fullName, setFullName] = useState("")
   const [phone, setPhone] = useState("")
   const [street, setStreet] = useState("")
@@ -131,7 +142,37 @@ export function CheckoutPageClient() {
         : "25 PLN"
   const total = step < 1 ? subtotal : subtotal + shippingFee
 
-  const showEmailOptions = emailLooksValid(email)
+  const emailValid = emailLooksValid(email)
+  const showPasswordBlock = emailUi === "signin"
+
+  const onEmailChange = (value: string) => {
+    setEmail(value)
+    setEmailUi("collect")
+    setWelcomeName(null)
+    setPassword("")
+  }
+
+  const continueAsGuest = () => {
+    setStep(1)
+  }
+
+  const runEmailContinue = async () => {
+    if (!emailValid) return
+    if (emailUi === "signin") {
+      if (!password.trim()) return
+      setStep(1)
+      return
+    }
+    setEmailUi("checking")
+    const result = await checkEmail(email)
+    if (!result.found) {
+      setEmailUi("collect")
+      setStep(1)
+      return
+    }
+    setWelcomeName(result.name)
+    setEmailUi("signin")
+  }
 
   if (lines.length === 0) {
     return (
@@ -177,43 +218,90 @@ export function CheckoutPageClient() {
                 id="checkout-email-heading"
                 className="font-serif text-3xl tracking-wide text-foreground md:text-4xl mb-2"
               >
-                How would you like to continue?
+                Welcome to Maison Snow
               </h1>
-              <p className="text-sm text-muted-foreground mb-8">
-                We will send your order confirmation to this address.
+              <p className="text-sm text-muted-foreground mb-8 leading-relaxed">
+                Sign in for a faster experience or continue as guest
               </p>
               <div className="space-y-2">
                 <Label htmlFor="checkout-email" className="text-xs tracking-widest uppercase text-muted-foreground">
                   Email
                 </Label>
-                <Input
-                  id="checkout-email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="min-h-11 border-border bg-card"
-                  placeholder="you@example.com"
-                />
-              </div>
-              {showEmailOptions ? (
-                <div className="mt-8 space-y-4">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <Input
+                    id="checkout-email"
+                    type="email"
+                    autoComplete="email"
+                    value={email}
+                    onChange={(e) => onEmailChange(e.target.value)}
+                    disabled={emailUi === "checking"}
+                    className="min-h-11 min-w-0 flex-1 border-border bg-card disabled:opacity-60"
+                    placeholder="you@example.com"
+                  />
                   <button
                     type="button"
-                    onClick={() => setStep(1)}
-                    className="flex min-h-12 w-full max-w-md items-center justify-center bg-primary px-6 py-3 text-xs tracking-widest uppercase text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    disabled={
+                      emailUi === "checking" ||
+                      (emailUi !== "signin" && !emailValid) ||
+                      (emailUi === "signin" && !password.trim())
+                    }
+                    onClick={() => void runEmailContinue()}
+                    className="flex min-h-11 w-full shrink-0 items-center justify-center gap-2 bg-primary px-5 py-3 text-xs tracking-widest uppercase text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40 sm:w-auto"
                   >
-                    Continue as Guest
+                    {emailUi === "checking" ? (
+                      <>
+                        <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                        Checking
+                      </>
+                    ) : emailUi === "signin" ? (
+                      "Sign in & Continue"
+                    ) : (
+                      "Continue"
+                    )}
                   </button>
-                  <Link
-                    href={`/login?returnUrl=${encodeURIComponent("/checkout")}`}
-                    className="block text-center text-sm text-gold tracking-wide underline-offset-4 hover:text-gold-light hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 focus-visible:ring-offset-2 rounded-sm"
-                  >
-                    Sign in to your account
-                  </Link>
                 </div>
-              ) : null}
-              <p className="mt-8 text-xs text-muted-foreground">No account needed to place an order</p>
+
+                <div
+                  className={`grid transition-[grid-template-rows] duration-300 ease-out ${showPasswordBlock ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+                >
+                  <div className="min-h-0 overflow-hidden">
+                    <div
+                      className={`space-y-3 pt-4 transition-opacity duration-300 ease-out ${showPasswordBlock ? "opacity-100" : "pointer-events-none opacity-0"}`}
+                    >
+                      {welcomeName ? (
+                        <p className="text-sm text-muted-foreground">
+                          Welcome back, <span className="text-foreground font-medium">{welcomeName}</span>
+                        </p>
+                      ) : null}
+                      <div className="space-y-2">
+                        <Label htmlFor="checkout-password" className="text-xs tracking-widest uppercase text-muted-foreground">
+                          Password
+                        </Label>
+                        <Input
+                          id="checkout-password"
+                          type="password"
+                          autoComplete="current-password"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          tabIndex={showPasswordBlock ? undefined : -1}
+                          aria-hidden={!showPasswordBlock}
+                          className="min-h-11 border-border bg-card"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <p className="mt-5 text-center">
+                <button
+                  type="button"
+                  onClick={continueAsGuest}
+                  className="border-0 bg-transparent p-0 text-center text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm"
+                >
+                  Or continue as guest
+                </button>
+              </p>
             </section>
           ) : null}
 

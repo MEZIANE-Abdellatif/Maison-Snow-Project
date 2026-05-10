@@ -20,7 +20,7 @@ function CartLineRow({ line }: { line: CartLine }) {
   const inc = () => setLineQuantity(line.lineId, line.quantity + 1)
 
   return (
-    <li className="border-b border-gold/40 pb-8 last:border-b-0 last:pb-0">
+    <li className="rounded-sm border border-border bg-card p-5 shadow-sm sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:gap-6">
         <Link
           href={`/product/${line.slug}`}
@@ -161,7 +161,7 @@ export function CartPageClient() {
             Your Cart
           </h1>
 
-          <ul className="list-none space-y-0 p-0 m-0">
+          <ul className="m-0 list-none space-y-4 p-0">
             {lines.map((line) => (
               <CartLineRow key={line.lineId} line={line} />
             ))}
