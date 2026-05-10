@@ -1,4 +1,5 @@
 import Image from "next/image"
+import Link from "next/link"
 
 const products = [
   {
@@ -73,12 +74,12 @@ export function NewArrivals() {
 
         {/* View all button */}
         <div className="text-center mt-12">
-          <a 
-            href="#" 
-            className="inline-block border-2 border-primary text-primary px-12 py-4 text-sm tracking-widest uppercase hover:bg-primary hover:text-primary-foreground transition-all duration-300"
+          <Link
+            href="/shop"
+            className="inline-flex min-h-11 items-center justify-center border-2 border-primary text-primary px-12 py-3 text-sm tracking-widest uppercase hover:bg-primary hover:text-primary-foreground transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-cream-dark"
           >
             View All Products
-          </a>
+          </Link>
         </div>
       </div>
     </section>

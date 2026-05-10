@@ -16,6 +16,9 @@ const montserrat = Montserrat({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
+  ),
   title: 'Maison Snow | Timeless Elegance, Made For You',
   description: 'Discover luxury fashion at Maison Snow. Premium quality purses, jewelry, scarves, and dresses crafted with love and passion.',
   generator: 'v0.app',
