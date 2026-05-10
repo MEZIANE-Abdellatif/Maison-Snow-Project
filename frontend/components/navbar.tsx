@@ -1,14 +1,26 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useState } from "react"
 import { Menu, X, Search, ShoppingBag, User } from "lucide-react"
 
 import { useCart } from "@/contexts/cart-context"
+import { useMockAuth } from "@/contexts/mock-auth-context"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 export function Navbar() {
+  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const { count } = useCart()
+  const { isLoggedIn, displayFirstName, signOut } = useMockAuth()
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -58,13 +70,59 @@ export function Navbar() {
             >
               <Search className="w-5 h-5" />
             </button>
-            <button
-              type="button"
-              className="p-2 text-foreground hover:text-gold transition-colors min-h-11 min-w-11 flex items-center justify-center"
-              aria-label="Account"
-            >
-              <User className="w-5 h-5" />
-            </button>
+
+            {isLoggedIn ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    className="p-2 text-foreground hover:text-gold transition-colors min-h-11 min-w-11 flex items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                    aria-label="Account menu"
+                  >
+                    <User className="w-5 h-5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="end"
+                  sideOffset={8}
+                  className="min-w-[12.5rem] border-gold/30 bg-card p-1.5 shadow-lg"
+                >
+                  <DropdownMenuLabel className="pointer-events-none cursor-default font-serif text-sm font-normal tracking-wide text-foreground px-2 py-2">
+                    {displayFirstName}
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem asChild className="cursor-pointer text-sm">
+                    <Link href="/account" className="w-full">
+                      My Account
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="cursor-pointer text-sm">
+                    <Link href="/account/orders" className="w-full">
+                      My Orders
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator className="my-1 bg-gold/35" />
+                  <DropdownMenuItem
+                    className="cursor-pointer text-sm text-muted-foreground focus:text-muted-foreground"
+                    onSelect={(e) => {
+                      e.preventDefault()
+                      signOut()
+                      router.refresh()
+                    }}
+                  >
+                    Sign Out
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            ) : (
+              <Link
+                href="/login"
+                className="p-2 text-foreground hover:text-gold transition-colors min-h-11 min-w-11 flex items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                aria-label="Sign in"
+              >
+                <User className="w-5 h-5" />
+              </Link>
+            )}
+
             <Link
               href="/cart"
               className="p-2 text-foreground hover:text-gold transition-colors relative min-h-11 min-w-11 flex items-center justify-center rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
@@ -86,29 +144,29 @@ export function Navbar() {
       {isOpen && (
         <div className="lg:hidden bg-background border-t border-border">
           <div className="px-4 py-6 space-y-4">
-            <Link 
-              href="#categories" 
+            <Link
+              href="#categories"
               className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
               onClick={() => setIsOpen(false)}
             >
               Collections
             </Link>
-            <Link 
-              href="#new-arrivals" 
+            <Link
+              href="#new-arrivals"
               className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
               onClick={() => setIsOpen(false)}
             >
               New Arrivals
             </Link>
-            <Link 
-              href="#story" 
+            <Link
+              href="#story"
               className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
               onClick={() => setIsOpen(false)}
             >
               Our Story
             </Link>
-            <Link 
-              href="#contact" 
+            <Link
+              href="#contact"
               className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
               onClick={() => setIsOpen(false)}
             >

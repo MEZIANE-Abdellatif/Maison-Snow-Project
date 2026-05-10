@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { formatPrice } from "@/lib/shop-data"
 
 const STEPS = [
@@ -143,6 +144,8 @@ export function CheckoutPageClient() {
   const total = step < 1 ? subtotal : subtotal + shippingFee
 
   const emailValid = emailLooksValid(email)
+  /** Guest path still requires a valid email; link stays off until the address is complete. */
+  const guestLinkEnabled = emailValid
   const showPasswordBlock = emailUi === "signin"
 
   const onEmailChange = (value: string) => {
@@ -294,13 +297,33 @@ export function CheckoutPageClient() {
               </div>
 
               <p className="mt-5 text-center">
-                <button
-                  type="button"
-                  onClick={continueAsGuest}
-                  className="border-0 bg-transparent p-0 text-center text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm"
-                >
-                  Or continue as guest
-                </button>
+                {guestLinkEnabled ? (
+                  <button
+                    type="button"
+                    onClick={continueAsGuest}
+                    className="border-0 bg-transparent p-0 text-center text-xs text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-sm"
+                  >
+                    or continue as guest
+                  </button>
+                ) : (
+                  <Tooltip delayDuration={0}>
+                    <TooltipTrigger asChild>
+                      <span className="inline-block cursor-not-allowed rounded-sm outline-none">
+                        <button
+                          type="button"
+                          aria-disabled
+                          tabIndex={-1}
+                          className="pointer-events-none cursor-not-allowed border-0 bg-transparent p-0 text-center text-xs text-muted-foreground/45 underline-offset-4 rounded-sm"
+                        >
+                          or continue as guest
+                        </button>
+                      </span>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" sideOffset={6} className="max-w-[min(280px,calc(100vw-2rem))] text-center">
+                      Enter your email to continue as a guest
+                    </TooltipContent>
+                  </Tooltip>
+                )}
               </p>
             </section>
           ) : null}

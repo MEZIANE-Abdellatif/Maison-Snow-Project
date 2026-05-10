@@ -16,14 +16,7 @@ export function Hero() {
       </div>
 
       {/* New Beginning ribbon */}
-      <div className="absolute top-24 right-4 md:right-12 z-10">
-        <div className="bg-primary text-primary-foreground px-4 py-3 text-center relative">
-          <span className="text-xs tracking-widest uppercase block">New</span>
-          <span className="text-xs tracking-widest uppercase block">Beginning</span>
-          <div className="absolute -bottom-3 left-0 w-0 h-0 border-l-[24px] border-l-primary border-b-[12px] border-b-transparent" />
-          <div className="absolute -bottom-3 right-0 w-0 h-0 border-r-[24px] border-r-primary border-b-[12px] border-b-transparent" />
-        </div>
-      </div>
+   
 
       {/* Content */}
       <div className="relative z-10 text-center px-4 max-w-4xl mx-auto">

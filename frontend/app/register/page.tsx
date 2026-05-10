@@ -1,23 +1,23 @@
 import type { Metadata } from "next"
 import { Suspense } from "react"
 
-import { LoginAuthPage } from "@/components/auth/login-auth-page"
+import { RegisterAuthPage } from "@/components/auth/register-auth-page"
 
 export const metadata: Metadata = {
-  title: "Sign In | Maison Snow",
-  description: "Sign in to your Maison Snow account.",
-  alternates: { canonical: "/login" },
+  title: "Create Account | Maison Snow",
+  description: "Create your Maison Snow account.",
+  alternates: { canonical: "/register" },
   openGraph: {
-    title: "Sign In | Maison Snow",
-    description: "Sign in to your Maison Snow account.",
-    url: "/login",
+    title: "Create Account | Maison Snow",
+    description: "Create your Maison Snow account.",
+    url: "/register",
     siteName: "Maison Snow",
     type: "website",
   },
   twitter: {
     card: "summary",
-    title: "Sign In | Maison Snow",
-    description: "Sign in to your Maison Snow account.",
+    title: "Create Account | Maison Snow",
+    description: "Create your Maison Snow account.",
   },
 }
 
@@ -29,10 +29,10 @@ function AuthFallback() {
   )
 }
 
-export default function LoginPage() {
+export default function RegisterPage() {
   return (
     <Suspense fallback={<AuthFallback />}>
-      <LoginAuthPage />
+      <RegisterAuthPage />
     </Suspense>
   )
 }
