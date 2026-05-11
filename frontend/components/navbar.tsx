@@ -96,7 +96,7 @@ export function Navbar() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild className="cursor-pointer text-sm">
-                    <Link href="/account/orders" className="w-full">
+                    <Link href="/account?tab=orders" className="w-full">
                       My Orders
                     </Link>
                   </DropdownMenuItem>
