@@ -51,6 +51,11 @@ import { cn } from "@/lib/utils"
 const TABS = ["orders", "profile", "addresses"] as const
 type AccountTab = (typeof TABS)[number]
 
+/** Content card floor; sidebar uses the same value as a fixed height (does not grow with the card). */
+const accountColumnsMinH = "min-h-[max(600px,calc(100dvh-5rem-22rem))]"
+const accountSidebarFixedH =
+  "h-[max(600px,calc(100dvh-5rem-22rem))] max-h-[max(600px,calc(100dvh-5rem-22rem))] shrink-0"
+
 function isAccountTab(value: string | null): value is AccountTab {
   return value === "orders" || value === "profile" || value === "addresses"
 }
@@ -92,7 +97,14 @@ function AccountSectionCard({
 }) {
   const headingId = `account-section-${sectionId}`
   return (
-    <section className={accountSectionCardClass} aria-labelledby={headingId}>
+    <section
+      className={cn(
+        accountSectionCardClass,
+        "flex flex-col",
+        accountColumnsMinH,
+      )}
+      aria-labelledby={headingId}
+    >
       <h1 id={headingId} className={accountSectionTitleClass}>
         {title}
       </h1>
@@ -692,19 +704,28 @@ export function AccountPageClient() {
 
   const navItemClass = (tab: AccountTab) =>
     cn(
-      "flex min-h-11 w-full items-center rounded-sm py-2.5 pl-4 pr-3 text-left text-sm font-medium tracking-wide transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-account-gold-accent/45 focus-visible:ring-offset-2 focus-visible:ring-offset-account-sidebar",
+      "flex min-h-11 w-full items-center rounded-sm py-2.5 pl-4 pr-3 text-left text-sm font-medium tracking-wide transition-colors duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-account-gold-accent/45 focus-visible:ring-offset-2 focus-visible:ring-offset-card",
       activeTab === tab
         ? "border-l-[3px] border-account-gold-accent bg-[#E0D8C6]/90 text-account-gold-accent"
         : "border-l-[3px] border-transparent text-muted-foreground hover:bg-black/[0.05] hover:text-foreground",
     )
 
   return (
-    <main className="min-h-screen bg-account-main">
+    <main className="flex min-h-screen flex-col bg-account-main">
       <Navbar />
-      <div className="mx-auto max-w-7xl px-4 pb-24 pt-24 sm:px-6 md:pt-28 lg:px-8 lg:pb-28 lg:pt-32">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch lg:gap-0">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 pb-24 pt-24 sm:px-6 md:pt-28 lg:px-8 lg:pb-28 lg:pt-32">
+        <div
+          className={cn(
+            "flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-0",
+          )}
+        >
           {/* Sidebar — desktop */}
-          <aside className="hidden lg:flex lg:w-[25%] lg:min-w-[220px] lg:max-w-sm lg:flex-col lg:border-r lg:border-account-gold-accent lg:bg-account-sidebar lg:px-7 lg:py-10">
+          <aside
+            className={cn(
+              "hidden shrink-0 lg:flex lg:w-[25%] lg:min-w-[220px] lg:max-w-sm lg:flex-col lg:self-start lg:border-r lg:border-account-gold-accent lg:bg-card lg:px-7 lg:py-10",
+              accountSidebarFixedH,
+            )}
+          >
             <div className="mb-10 space-y-1">
               <p className="font-serif text-lg italic leading-snug text-muted-foreground">Welcome back,</p>
               <p className="font-serif text-3xl tracking-wide text-foreground">{greetingName}</p>
@@ -724,7 +745,7 @@ export function AccountPageClient() {
                   type="button"
                   className={cn(
                     mutedLinkClass,
-                    "w-full justify-center rounded-sm border border-border bg-account-sidebar/60 py-2.5 transition-colors hover:bg-black/[0.04] hover:text-foreground",
+                    "w-full justify-center rounded-sm border border-border bg-card py-2.5 transition-colors hover:bg-muted/40 hover:text-foreground",
                   )}
                   onClick={() => {
                     signOut()
@@ -741,14 +762,14 @@ export function AccountPageClient() {
           {/* Main */}
           <div className="flex min-w-0 flex-1 flex-col lg:py-6 lg:pl-8 lg:pr-2">
             {/* Mobile: greeting + tabs */}
-            <div className="mb-6 space-y-4 lg:hidden">
-              <div className="rounded-sm border border-border bg-account-sidebar p-4 sm:p-5">
+            <div className="mb-6 shrink-0 space-y-4 lg:hidden">
+              <div className="rounded-sm border border-border bg-card p-4 sm:p-5">
                 <div className="space-y-1">
                   <p className="font-serif text-base italic text-muted-foreground">Welcome back,</p>
                   <p className="font-serif text-2xl tracking-wide text-foreground">{greetingName}</p>
                 </div>
               </div>
-              <div className="rounded-sm border border-border bg-account-sidebar/90 p-1.5">
+              <div className="rounded-sm border border-border bg-card p-1.5">
                 <nav
                   className="flex gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                   aria-label="Account sections"
@@ -778,23 +799,25 @@ export function AccountPageClient() {
               </div>
             </div>
 
-            {activeTab === "orders" ? <OrdersSection orders={MOCK_ORDERS} /> : null}
-            {activeTab === "profile" ? (
-              <ProfileSection
-                email={email}
-                initialFirst={profileFirst}
-                initialLast={profileLast}
-                initialPhone="+1 (212) 555-0199"
-              />
-            ) : null}
-            {activeTab === "addresses" ? <AddressesSection /> : null}
+            <div key={activeTab} className="animate-in fade-in-0 w-full duration-300">
+                {activeTab === "orders" ? <OrdersSection orders={MOCK_ORDERS} /> : null}
+                {activeTab === "profile" ? (
+                  <ProfileSection
+                    email={email}
+                    initialFirst={profileFirst}
+                    initialLast={profileLast}
+                    initialPhone="+1 (212) 555-0199"
+                  />
+                ) : null}
+                {activeTab === "addresses" ? <AddressesSection /> : null}
+            </div>
 
-            <div className="mt-10 flex justify-center lg:hidden">
+            <div className="mt-10 flex shrink-0 justify-center lg:hidden">
               <button
                 type="button"
                 className={cn(
                   mutedLinkClass,
-                  "min-h-11 justify-center rounded-sm border border-border bg-account-sidebar/70 px-6 py-2.5 transition-colors hover:bg-black/[0.04]",
+                  "min-h-11 justify-center rounded-sm border border-border bg-card px-6 py-2.5 transition-colors hover:bg-muted/40",
                 )}
                 onClick={() => {
                   signOut()
