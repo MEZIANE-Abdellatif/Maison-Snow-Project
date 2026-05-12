@@ -46,6 +46,8 @@
   --account-main: #f5efe0;
   --account-gold-accent: #c9a84c;
   --account-order-stripe: #fafaf7;
+  /** Admin console — dark sidebar */
+  --admin-sidebar-bg: #0d0d0d;
 }
 
 .dark {
@@ -95,6 +97,7 @@
   --color-account-main: var(--account-main);
   --color-account-gold-accent: var(--account-gold-accent);
   --color-account-order-stripe: var(--account-order-stripe);
+  --color-admin-sidebar-bg: var(--admin-sidebar-bg);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
