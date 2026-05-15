@@ -35,7 +35,7 @@ export type AdminProduct = {
   price: number
   stock: number
   active: boolean
-  image: string
+  images: string[]
   sizes: string[]
 }
 
@@ -179,7 +179,7 @@ export const MOCK_ADMIN_PRODUCTS: AdminProduct[] = [
     price: 1250,
     stock: 12,
     active: true,
-    image: "/images/product1.jpg",
+    images: ["/images/product1.jpg"],
     sizes: ["S", "M", "L"],
   },
   {
@@ -190,7 +190,7 @@ export const MOCK_ADMIN_PRODUCTS: AdminProduct[] = [
     price: 485,
     stock: 28,
     active: true,
-    image: "/images/product2.jpg",
+    images: ["/images/product2.jpg"],
     sizes: ["One Size"],
   },
   {
@@ -201,7 +201,7 @@ export const MOCK_ADMIN_PRODUCTS: AdminProduct[] = [
     price: 320,
     stock: 6,
     active: false,
-    image: "/images/product4.jpg",
+    images: ["/images/product4.jpg"],
     sizes: ["One Size"],
   },
 ]

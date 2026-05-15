@@ -1,7 +1,30 @@
 import { PrismaPg } from "@prisma/adapter-pg"
 import bcrypt from "bcryptjs"
 
+import { uploadImage } from "../lib/cloudinary"
 import { PrismaClient } from "./generated/prisma/client.js"
+
+const PLACEHOLDER_FOLDER = "maison-snow/products/placeholders"
+
+const CATEGORY_PLACEHOLDER_SOURCES: Record<string, string> = {
+  purse: "https://picsum.photos/seed/maison-purse/800/1000",
+  jewelry: "https://picsum.photos/seed/maison-jewelry/800/1000",
+  scarf: "https://picsum.photos/seed/maison-scarf/800/1000",
+  dress: "https://picsum.photos/seed/maison-dress/800/1000",
+}
+
+async function fetchImageBuffer(url: string): Promise<Buffer> {
+  const res = await fetch(url)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch placeholder image: ${url}`)
+  }
+  return Buffer.from(await res.arrayBuffer())
+}
+
+async function uploadCategoryPlaceholder(slug: string, sourceUrl: string): Promise<string> {
+  const buffer = await fetchImageBuffer(sourceUrl)
+  return uploadImage(buffer, `${slug}-placeholder.jpg`, PLACEHOLDER_FOLDER)
+}
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL! })
 const prisma = new PrismaClient({ adapter })
@@ -9,7 +32,12 @@ const prisma = new PrismaClient({ adapter })
 async function main() {
   console.log("🌱 Seeding database …")
 
-  // ─── Categories ──────────────────────────────────────────────────────────────
+  console.log("  ↳ Uploading category placeholders to Cloudinary …")
+  const placeholderUrls: Record<string, string> = {}
+  for (const [slug, sourceUrl] of Object.entries(CATEGORY_PLACEHOLDER_SOURCES)) {
+    placeholderUrls[slug] = await uploadCategoryPlaceholder(slug, sourceUrl)
+    console.log(`    ✓ ${slug}`)
+  }
 
   const categories = await Promise.all([
     prisma.category.upsert({
@@ -53,10 +81,12 @@ async function main() {
   const [purse, jewelry, scarf, dress] = categories
   console.log(`  ✓ ${categories.length} categories`)
 
-  // ─── Products ────────────────────────────────────────────────────────────────
+  const purseImages = [placeholderUrls.purse, placeholderUrls.purse]
+  const jewelryImages = [placeholderUrls.jewelry, placeholderUrls.jewelry]
+  const scarfImages = [placeholderUrls.scarf, placeholderUrls.scarf]
+  const dressImages = [placeholderUrls.dress, placeholderUrls.dress]
 
   const productData = [
-    // Purses (400–1 200 PLN)
     {
       categoryId: purse.id,
       name: "Ivory Leather Tote",
@@ -65,10 +95,7 @@ async function main() {
         "Hand-finished Italian leather with a suede-lined interior. Structured silhouette, polished hardware, and a shoulder strap that sits just right.",
       price: 1150,
       sizes: ["S", "M", "L"],
-      images: [
-        "https://picsum.photos/seed/purse1a/800/1000",
-        "https://picsum.photos/seed/purse1b/800/1000",
-      ],
+      images: purseImages,
       stock: 10,
     },
     {
@@ -79,10 +106,7 @@ async function main() {
         "Compact crossbody in deep grain leather with an adjustable strap. Designed for essentials only: phone, keys, lipstick, and quiet confidence.",
       price: 890,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/purse2a/800/1000",
-        "https://picsum.photos/seed/purse2b/800/1000",
-      ],
+      images: purseImages,
       stock: 10,
     },
     {
@@ -93,10 +117,7 @@ async function main() {
         "Reinforced canvas with leather trim and a sturdy base. Spacious enough for a laptop, soft enough to fold for travel.",
       price: 780,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/purse3a/800/1000",
-        "https://picsum.photos/seed/purse3b/800/1000",
-      ],
+      images: purseImages,
       stock: 10,
     },
     {
@@ -107,14 +128,9 @@ async function main() {
         "Buttery suede with a magnetic fold-over flap. A slim gold chain lets it double as a shoulder bag when the evening calls for hands-free.",
       price: 520,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/purse4a/800/1000",
-        "https://picsum.photos/seed/purse4b/800/1000",
-      ],
+      images: purseImages,
       stock: 10,
     },
-
-    // Jewelry (200–800 PLN)
     {
       categoryId: jewelry.id,
       name: "Gold Link Bracelet",
@@ -123,10 +139,7 @@ async function main() {
         "Warm-toned links with a secure clasp and a weight that feels substantial yet refined. Layer it or let it shine on its own.",
       price: 485,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/jewel1a/800/1000",
-        "https://picsum.photos/seed/jewel1b/800/1000",
-      ],
+      images: jewelryImages,
       stock: 10,
     },
     {
@@ -137,10 +150,7 @@ async function main() {
         "Lustrous cultured pearls hand-knotted for drape and longevity. A Maison Snow signature for vows, galas, and every moment worth remembering.",
       price: 720,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/jewel2a/800/1000",
-        "https://picsum.photos/seed/jewel2b/800/1000",
-      ],
+      images: jewelryImages,
       stock: 10,
     },
     {
@@ -151,10 +161,7 @@ async function main() {
         "Slim drops that catch light with every turn. Hypoallergenic posts, balanced weight, and a silhouette that elongates the neck.",
       price: 395,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/jewel3a/800/1000",
-        "https://picsum.photos/seed/jewel3b/800/1000",
-      ],
+      images: jewelryImages,
       stock: 10,
     },
     {
@@ -165,14 +172,9 @@ async function main() {
         "A sculptural ring with a hand-twisted motif. The open band adjusts slightly for a comfortable fit on any finger.",
       price: 310,
       sizes: ["S", "M", "L"],
-      images: [
-        "https://picsum.photos/seed/jewel4a/800/1000",
-        "https://picsum.photos/seed/jewel4b/800/1000",
-      ],
+      images: jewelryImages,
       stock: 10,
     },
-
-    // Scarves (150–400 PLN)
     {
       categoryId: scarf.id,
       name: "Champagne Cashmere Scarf",
@@ -181,10 +183,7 @@ async function main() {
         "Featherlight cashmere with hand-rolled edges. The tone reads as neutral warmth—equally at home with camel tailoring or winter white.",
       price: 350,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/scarf1a/800/1000",
-        "https://picsum.photos/seed/scarf1b/800/1000",
-      ],
+      images: scarfImages,
       stock: 10,
     },
     {
@@ -195,10 +194,7 @@ async function main() {
         "Fluid silk charmeuse with a subtle sheen. Drape over shoulders or knot at the neck—the cut is generous without ever feeling heavy.",
       price: 290,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/scarf2a/800/1000",
-        "https://picsum.photos/seed/scarf2b/800/1000",
-      ],
+      images: scarfImages,
       stock: 10,
     },
     {
@@ -209,10 +205,7 @@ async function main() {
         "Dense yet breathable merino in a generous rectangular cut. Works as a blanket on long flights or a structured wrap with a brooch.",
       price: 220,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/scarf3a/800/1000",
-        "https://picsum.photos/seed/scarf3b/800/1000",
-      ],
+      images: scarfImages,
       stock: 10,
     },
     {
@@ -223,14 +216,9 @@ async function main() {
         "A silk-cotton blend square with an original Maison Snow floral print. Tie it at the neck, the wrist, or through a bag handle.",
       price: 165,
       sizes: ["One Size"],
-      images: [
-        "https://picsum.photos/seed/scarf4a/800/1000",
-        "https://picsum.photos/seed/scarf4b/800/1000",
-      ],
+      images: scarfImages,
       stock: 10,
     },
-
-    // Dresses (600–2 000 PLN)
     {
       categoryId: dress.id,
       name: "Midnight Silk Slip Dress",
@@ -239,10 +227,7 @@ async function main() {
         "Bias-cut silk charmeuse that skims the body without clinging. A cowl neckline and an open back keep the drama quiet but undeniable.",
       price: 1450,
       sizes: ["XS", "S", "M", "L", "XL"],
-      images: [
-        "https://picsum.photos/seed/dress1a/800/1000",
-        "https://picsum.photos/seed/dress1b/800/1000",
-      ],
+      images: dressImages,
       stock: 10,
     },
     {
@@ -253,10 +238,7 @@ async function main() {
         "French lace over a nude lining with scalloped hems. Cap sleeves and a defined waist make it equally suited for garden parties and civil ceremonies.",
       price: 1850,
       sizes: ["XS", "S", "M", "L"],
-      images: [
-        "https://picsum.photos/seed/dress2a/800/1000",
-        "https://picsum.photos/seed/dress2b/800/1000",
-      ],
+      images: dressImages,
       stock: 10,
     },
     {
@@ -267,10 +249,7 @@ async function main() {
         "Double-breasted styling in heavy crepe with satin peak lapels. The power shoulder meets a relaxed hem that falls just above the knee.",
       price: 980,
       sizes: ["S", "M", "L", "XL"],
-      images: [
-        "https://picsum.photos/seed/dress3a/800/1000",
-        "https://picsum.photos/seed/dress3b/800/1000",
-      ],
+      images: dressImages,
       stock: 10,
     },
     {
@@ -281,10 +260,7 @@ async function main() {
         "Layers of soft tulle over a fitted bodice with hand-sewn crystal accents. Floor-length and weightless—designed for the night you want to remember forever.",
       price: 1980,
       sizes: ["XS", "S", "M", "L"],
-      images: [
-        "https://picsum.photos/seed/dress4a/800/1000",
-        "https://picsum.photos/seed/dress4b/800/1000",
-      ],
+      images: dressImages,
       stock: 10,
     },
   ]
@@ -293,7 +269,9 @@ async function main() {
   for (const p of productData) {
     await prisma.product.upsert({
       where: { slug: p.slug },
-      update: {},
+      update: {
+        images: p.images,
+      },
       create: {
         categoryId: p.categoryId,
         name: p.name,
@@ -309,8 +287,6 @@ async function main() {
     productCount++
   }
   console.log(`  ✓ ${productCount} products`)
-
-  // ─── Admin user ──────────────────────────────────────────────────────────────
 
   const passwordHash = await bcrypt.hash("admin123", 12)
 

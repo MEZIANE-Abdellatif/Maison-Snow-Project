@@ -1,7 +1,7 @@
 "use client"
 
 import Image from "next/image"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useRef, useState } from "react"
 
 import {
   AlertDialog,
@@ -50,7 +50,13 @@ import {
 import type { ProductCategory } from "@/lib/shop-data"
 import { formatPrice } from "@/lib/shop-data"
 import { authInputClass, authLabelClass, authPrimaryButtonClass } from "@/components/auth/auth-field-styles"
+import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
+import { X } from "lucide-react"
+
+const MAX_PRODUCT_IMAGES = 4
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
 
 const modalFieldClass = cn(
   authInputClass,
@@ -72,8 +78,9 @@ export function AdminProductsPageClient() {
   const [stock, setStock] = useState("")
   const [sizes, setSizes] = useState<Set<string>>(() => new Set())
   const [active, setActive] = useState(true)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [imagePath, setImagePath] = useState("/images/product1.jpg")
+  const [images, setImages] = useState<string[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [deleteId, setDeleteId] = useState<string | null>(null)
 
@@ -86,8 +93,9 @@ export function AdminProductsPageClient() {
     setStock("")
     setSizes(new Set())
     setActive(true)
-    setImagePreview(null)
-    setImagePath("/images/product1.jpg")
+    setImages([])
+    setUploading(false)
+    setUploadError(null)
   }, [])
 
   const openAdd = useCallback(() => {
@@ -104,24 +112,65 @@ export function AdminProductsPageClient() {
     setStock(String(p.stock))
     setSizes(new Set(p.sizes))
     setActive(p.active)
-    setImagePreview(null)
-    setImagePath(p.image)
+    setImages([...p.images])
+    setUploadError(null)
     setModalOpen(true)
   }, [])
 
-  useEffect(() => {
-    return () => {
-      if (imagePreview?.startsWith("blob:")) URL.revokeObjectURL(imagePreview)
-    }
-  }, [imagePreview])
+  const uploadFile = useCallback(
+    async (file: File) => {
+      if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+        setUploadError("Please upload a JPEG, PNG, or WebP image.")
+        return
+      }
+      if (file.size > MAX_IMAGE_BYTES) {
+        setUploadError("Image must be 5MB or smaller.")
+        return
+      }
+      if (images.length >= MAX_PRODUCT_IMAGES) {
+        setUploadError(`You can upload up to ${MAX_PRODUCT_IMAGES} images per product.`)
+        return
+      }
 
-  const onFile = useCallback((file: File | null) => {
-    if (!file || !file.type.startsWith("image/")) return
-    setImagePreview((prev) => {
-      if (prev?.startsWith("blob:")) URL.revokeObjectURL(prev)
-      return URL.createObjectURL(file)
-    })
-    setImagePath("")
+      setUploadError(null)
+      setUploading(true)
+
+      try {
+        const body = new FormData()
+        body.append("image", file)
+
+        const res = await fetch("/api/admin/upload", { method: "POST", body })
+        const data = (await res.json()) as { url?: string; error?: string }
+
+        if (!res.ok) {
+          setUploadError(data.error ?? "Upload failed. Please try again.")
+          return
+        }
+
+        if (data.url) {
+          setImages((prev) => [...prev, data.url!])
+        }
+      } catch {
+        setUploadError("Upload failed. Please try again.")
+      } finally {
+        setUploading(false)
+        if (fileInputRef.current) fileInputRef.current.value = ""
+      }
+    },
+    [images.length],
+  )
+
+  const onFile = useCallback(
+    (file: File | null) => {
+      if (!file) return
+      void uploadFile(file)
+    },
+    [uploadFile],
+  )
+
+  const removeImage = useCallback((index: number) => {
+    setImages((prev) => prev.filter((_, i) => i !== index))
+    setUploadError(null)
   }, [])
 
   const saveProduct = useCallback(() => {
@@ -141,7 +190,7 @@ export function AdminProductsPageClient() {
                 price: priceNum,
                 stock: stockNum,
                 active,
-                image: imagePreview && imagePreview.startsWith("blob:") ? p.image : imagePath || p.image,
+                images: images.length > 0 ? images : p.images,
                 sizes: sizeList.length ? sizeList : ["One Size"],
               }
             : p,
@@ -158,7 +207,7 @@ export function AdminProductsPageClient() {
           price: priceNum,
           stock: stockNum,
           active,
-          image: "/images/product1.jpg",
+          images: images.length > 0 ? images : ["/images/product1.jpg"],
           sizes: sizeList.length ? sizeList : ["One Size"],
         },
       ])
@@ -174,8 +223,7 @@ export function AdminProductsPageClient() {
     stock,
     sizes,
     active,
-    imagePath,
-    imagePreview,
+    images,
     resetForm,
   ])
 
@@ -233,7 +281,13 @@ export function AdminProductsPageClient() {
                 <TableRow key={p.id} className="border-border hover:bg-muted/30">
                   <TableCell>
                     <div className="relative h-12 w-12 overflow-hidden rounded-sm border border-border">
-                      <Image src={p.image} alt={p.name} fill className="object-cover" sizes="48px" />
+                      <Image
+                        src={p.images[0] ?? "/images/product1.jpg"}
+                        alt={p.name}
+                        fill
+                        className="object-cover"
+                        sizes="48px"
+                      />
                     </div>
                   </TableCell>
                   <TableCell className="max-w-[10rem] truncate text-sm font-medium">{p.name}</TableCell>
@@ -369,16 +423,43 @@ export function AdminProductsPageClient() {
               </div>
             </fieldset>
             <div className="space-y-2">
-              <span className={authLabelClass}>Image</span>
+              <span className={authLabelClass}>
+                Images ({images.length}/{MAX_PRODUCT_IMAGES})
+              </span>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/webp"
                 className="sr-only"
+                disabled={uploading || images.length >= MAX_PRODUCT_IMAGES}
                 onChange={(e) => onFile(e.target.files?.[0] ?? null)}
               />
+              {images.length > 0 ? (
+                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  {images.map((url, index) => (
+                    <li key={`${url}-${index}`} className="relative aspect-square overflow-hidden rounded-sm border border-border">
+                      <Image
+                        src={url}
+                        alt={name.trim() ? `${name} image ${index + 1}` : `Product image ${index + 1}`}
+                        fill
+                        className="object-cover"
+                        sizes="120px"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(index)}
+                        className="absolute right-1 top-1 flex h-7 w-7 items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm transition-colors hover:bg-destructive hover:text-destructive-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"
+                        aria-label={`Remove image ${index + 1}`}
+                      >
+                        <X className="size-4" aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
               <button
                 type="button"
+                disabled={uploading || images.length >= MAX_PRODUCT_IMAGES}
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => {
                   e.preventDefault()
@@ -388,21 +469,28 @@ export function AdminProductsPageClient() {
                   e.preventDefault()
                   onFile(e.dataTransfer.files?.[0] ?? null)
                 }}
-                className="flex min-h-[8rem] w-full cursor-pointer flex-col items-center justify-center rounded-sm border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground transition-colors hover:border-gold/45 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40"
+                className={cn(
+                  "flex min-h-[8rem] w-full flex-col items-center justify-center rounded-sm border border-dashed border-border bg-muted/20 px-4 py-6 text-center text-sm text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/40",
+                  uploading || images.length >= MAX_PRODUCT_IMAGES
+                    ? "cursor-not-allowed opacity-60"
+                    : "cursor-pointer hover:border-gold/45 hover:bg-muted/30",
+                )}
               >
-                {imagePreview ?? imagePath ? (
-                  <div className="relative mt-2 h-28 w-full max-w-[12rem]">
-                    <Image
-                      src={imagePreview ?? imagePath}
-                      alt={name.trim() ? `Preview: ${name}` : "Selected product image preview"}
-                      fill
-                      className="object-contain"
-                      unoptimized={Boolean(imagePreview?.startsWith("blob:"))}
-                    />
-                  </div>
-                ) : null}
-                <span className="mt-2">Drag and drop an image here, or click to upload</span>
+                {uploading ? (
+                  <Spinner className="size-8 text-gold" />
+                ) : (
+                  <span>
+                    {images.length >= MAX_PRODUCT_IMAGES
+                      ? "Maximum images reached"
+                      : "Drag and drop an image here, or click to upload"}
+                  </span>
+                )}
               </button>
+              {uploadError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {uploadError}
+                </p>
+              ) : null}
             </div>
             <div className="flex items-center justify-between gap-4 border-t border-border pt-2">
               <span className="text-sm font-medium text-foreground">Active on store</span>
