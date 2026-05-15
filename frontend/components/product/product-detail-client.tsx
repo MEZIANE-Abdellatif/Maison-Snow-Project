@@ -7,13 +7,7 @@ import { Minus, Plus } from "lucide-react"
 
 import { ShopProductCard } from "@/components/shop/shop-product-card"
 import { useCart } from "@/contexts/cart-context"
-import {
-  APPAREL_SIZES,
-  CATEGORY_TAGLINES,
-  formatPrice,
-  type ApparelSize,
-  type ShopProduct,
-} from "@/lib/shop-data"
+import { CATEGORY_TAGLINES, formatPrice, type ShopProduct } from "@/lib/shop-data"
 
 type ProductDetailClientProps = {
   product: ShopProduct
@@ -26,8 +20,8 @@ export function ProductDetailClient({
 }: ProductDetailClientProps) {
   const { addProduct } = useCart()
   const [imageIndex, setImageIndex] = useState(0)
-  const [size, setSize] = useState<ApparelSize | null>(() =>
-    product.hasSizes ? "M" : null,
+  const [size, setSize] = useState<string | null>(() =>
+    product.hasSizes ? (product.sizes[0] ?? null) : null,
   )
   const [qty, setQty] = useState(1)
 
@@ -135,7 +129,7 @@ export function ProductDetailClient({
                   role="group"
                   aria-labelledby="size-label"
                 >
-                  {APPAREL_SIZES.map((s) => {
+                  {product.sizes.map((s) => {
                     const active = size === s
                     return (
                       <button

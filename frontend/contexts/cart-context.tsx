@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react"
 
-import type { ApparelSize, ProductCategory, ShopProduct } from "@/lib/shop-data"
+import type { ProductCategory, ShopProduct } from "@/lib/shop-data"
 
 export type CartLine = {
   lineId: string
@@ -20,19 +20,19 @@ export type CartLine = {
   image: string
   unitPrice: number
   quantity: number
-  /** Set when added from PDP with sizes; null for shop / no-size items */
-  size: ApparelSize | null
+  /** Set when added from PDP with sizes; null for one-size items */
+  size: string | null
 }
 
 export type AddProductInput = {
   product: ShopProduct
   quantity?: number
-  size?: ApparelSize | null
+  size?: string | null
 }
 
 const MAX_LINE_QTY = 10
 
-function lineIdFor(productId: string, size: ApparelSize | null) {
+function lineIdFor(productId: string, size: string | null) {
   return `${productId}::${size ?? "_"}`
 }
 
@@ -57,7 +57,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const addProduct = useCallback((input: AddProductInput) => {
     const { product, quantity = 1, size = null } = input
     const q = Math.max(1, Math.min(MAX_LINE_QTY, Math.floor(quantity)))
-    const lineSize: ApparelSize | null = product.hasSizes ? size : null
+    const lineSize: string | null = product.hasSizes ? size : null
     const lineId = lineIdFor(product.id, lineSize)
 
     setLines((prev) => {

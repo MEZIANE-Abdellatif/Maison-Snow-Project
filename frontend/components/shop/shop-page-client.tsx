@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 
 import { Label } from "@/components/ui/label"
@@ -13,14 +13,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { AddedToCartModal } from "@/components/shop/added-to-cart-modal"
+import { ShopPageSkeleton } from "@/components/shop/shop-page-skeleton"
 import { ShopProductCard } from "@/components/shop/shop-product-card"
-import {
-  CATEGORY_TAGLINES,
-  MOCK_PRODUCTS,
-  parseCategoryParam,
-  type CategorySlug,
-  type ShopProduct,
-} from "@/lib/shop-data"
+import { fetchProducts, type ShopSortKey } from "@/lib/products-api"
+import { CATEGORY_TAGLINES, parseCategoryParam, type CategorySlug, type ShopProduct } from "@/lib/shop-data"
 
 const PILL_ORDER: { slug: CategorySlug; label: string }[] = [
   { slug: "all", label: "All" },
@@ -30,29 +26,14 @@ const PILL_ORDER: { slug: CategorySlug; label: string }[] = [
   { slug: "dress", label: "Dress" },
 ]
 
-type SortKey = "newest" | "price-asc" | "price-desc"
-
-function sortProducts(list: ShopProduct[], sort: SortKey): ShopProduct[] {
-  const next = [...list]
-  if (sort === "newest") {
-    next.sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-  } else if (sort === "price-asc") {
-    next.sort((a, b) => a.price - b.price)
-  } else {
-    next.sort((a, b) => b.price - a.price)
-  }
-  return next
-}
-
 export function ShopPageClient() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const category = parseCategoryParam(searchParams.get("category"))
-  const [sort, setSort] = useState<SortKey>("newest")
+  const [sort, setSort] = useState<ShopSortKey>("newest")
+  const [products, setProducts] = useState<ShopProduct[]>([])
+  const [loading, setLoading] = useState(true)
   const [addedProduct, setAddedProduct] = useState<ShopProduct | null>(null)
 
   const setCategory = useCallback(
@@ -69,15 +50,29 @@ export function ShopPageClient() {
     [pathname, router, searchParams],
   )
 
-  const filtered = useMemo(() => {
-    if (category === "all") return MOCK_PRODUCTS
-    return MOCK_PRODUCTS.filter((p) => p.category === category)
-  }, [category])
+  useEffect(() => {
+    let cancelled = false
 
-  const sorted = useMemo(
-    () => sortProducts(filtered, sort),
-    [filtered, sort],
-  )
+    async function load() {
+      setLoading(true)
+      try {
+        const data = await fetchProducts({
+          category: category === "all" ? undefined : category,
+          sort,
+        })
+        if (!cancelled) setProducts(data)
+      } catch {
+        if (!cancelled) setProducts([])
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void load()
+    return () => {
+      cancelled = true
+    }
+  }, [category, sort])
 
   const hero = useMemo(() => {
     if (category === "all") {
@@ -90,6 +85,10 @@ export function ShopPageClient() {
     const meta = CATEGORY_TAGLINES[category]
     return { title: meta.label, tagline: meta.tagline }
   }, [category])
+
+  if (loading) {
+    return <ShopPageSkeleton />
+  }
 
   return (
     <>
@@ -147,10 +146,7 @@ export function ShopPageClient() {
             >
               Sort by
             </Label>
-            <Select
-              value={sort}
-              onValueChange={(v) => setSort(v as SortKey)}
-            >
+            <Select value={sort} onValueChange={(v) => setSort(v as ShopSortKey)}>
               <SelectTrigger
                 id="shop-sort"
                 className="min-h-11 w-full sm:min-w-[220px] border-border bg-card"
@@ -166,14 +162,13 @@ export function ShopPageClient() {
           </div>
         </div>
 
-        {sorted.length === 0 ? (
+        {products.length === 0 ? (
           <div className="py-20 md:py-28 text-center px-4">
             <p className="font-serif text-2xl md:text-3xl text-foreground mb-3">
-              This collection is taking a breath.
+              No products found
             </p>
             <p className="text-muted-foreground text-sm md:text-base max-w-md mx-auto mb-10 leading-relaxed">
-              New pieces will arrive soon. Until then, explore the full
-              boutique.
+              Try another category or browse the full boutique.
             </p>
             <Link
               href="/shop"
@@ -186,7 +181,7 @@ export function ShopPageClient() {
           <>
             <h2 className="sr-only">Products</h2>
             <ul className="grid grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8 list-none p-0 m-0">
-              {sorted.map((product) => (
+              {products.map((product) => (
                 <li key={product.id}>
                   <ShopProductCard
                     product={product}
