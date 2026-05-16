@@ -1,12 +1,11 @@
 "use client"
 
 import Link from "next/link"
-import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { Menu, X, Search, ShoppingBag, User } from "lucide-react"
 
+import { signOut, useSession } from "next-auth/react"
 import { useCart } from "@/contexts/cart-context"
-import { useMockAuth } from "@/contexts/mock-auth-context"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -17,10 +16,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 export function Navbar() {
-  const router = useRouter()
   const [isOpen, setIsOpen] = useState(false)
   const { count } = useCart()
-  const { isLoggedIn, displayFirstName, signOut } = useMockAuth()
+  const { data: session, status } = useSession()
+  const isLoggedIn = status === "authenticated" && Boolean(session?.user)
+  const displayFirstName = session?.user?.firstName?.trim() || "Guest"
+
+  const handleSignOut = () => {
+    void signOut({ callbackUrl: "/" })
+  }
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -105,8 +109,7 @@ export function Navbar() {
                     className="cursor-pointer text-sm text-muted-foreground focus:text-muted-foreground"
                     onSelect={(e) => {
                       e.preventDefault()
-                      signOut()
-                      router.refresh()
+                      handleSignOut()
                     }}
                   >
                     Sign Out

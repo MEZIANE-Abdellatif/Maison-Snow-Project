@@ -1,6 +1,63 @@
 import { NextRequest, NextResponse } from "next/server"
 
+import { auth } from "@/auth"
 import { prisma } from "@/lib/db"
+
+function mapDeliveryStatus(status: string): "Processing" | "Shipped" | "Delivered" {
+  if (status === "SHIPPED") return "Shipped"
+  if (status === "DELIVERED") return "Delivered"
+  return "Processing"
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await auth()
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const userIdParam = request.nextUrl.searchParams.get("userId")
+    const userId = userIdParam && userIdParam === session.user.id ? userIdParam : session.user.id
+
+    const orders = await prisma.order.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      include: {
+        items: {
+          select: {
+            id: true,
+            productName: true,
+            price: true,
+            quantity: true,
+            size: true,
+          },
+        },
+      },
+    })
+
+    const mapped = orders.map((order) => ({
+      id: order.id,
+      placedAt: order.createdAt.toISOString(),
+      total: order.total,
+      status: mapDeliveryStatus(order.deliveryStatus),
+      items: order.items.map((item) => ({
+        id: item.id,
+        name: item.productName,
+        image: "/images/product1.jpg",
+        imageAlt: item.productName,
+        qty: item.quantity,
+        price: item.price,
+      })),
+      shippingAddress: order.shippingAddress.split("\n").filter(Boolean),
+      estimatedDelivery: "Delivery date will be confirmed by email",
+    }))
+
+    return NextResponse.json(mapped)
+  } catch (error) {
+    console.error("GET /api/orders error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
 
 interface OrderItemInput {
   productId: string

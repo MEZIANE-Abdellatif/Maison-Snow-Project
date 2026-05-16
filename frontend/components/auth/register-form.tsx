@@ -13,8 +13,8 @@ import {
 } from "@/components/auth/auth-field-styles"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { signIn } from "next-auth/react"
 import { sanitizeAuthReturnUrl } from "@/lib/auth-return-url"
-import { setMockSession } from "@/lib/mock-auth"
 
 export function RegisterForm() {
   const router = useRouter()
@@ -32,12 +32,14 @@ export function RegisterForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [submitError, setSubmitError] = useState<string | null>(null)
 
   const pwdStarted = password.length > 0
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setConfirmError(null)
+    setSubmitError(null)
     if (!confirmPassword.trim()) {
       setConfirmError("Please confirm your password.")
       return
@@ -47,14 +49,46 @@ export function RegisterForm() {
       return
     }
     if (!email.trim() || !password || !firstName.trim() || !lastName.trim()) return
+
     setSubmitting(true)
-    setMockSession({
-      email: email.trim(),
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-    })
-    router.push(returnUrl)
-    router.refresh()
+
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim().toLowerCase(),
+          password,
+        }),
+      })
+
+      const data = (await res.json()) as { error?: string }
+
+      if (!res.ok) {
+        setSubmitError(data.error ?? "Could not create account. Please try again.")
+        return
+      }
+
+      const signInResult = await signIn("credentials", {
+        email: email.trim().toLowerCase(),
+        password,
+        redirect: false,
+      })
+
+      if (signInResult?.error) {
+        setSubmitError("Account created but sign-in failed. Please sign in manually.")
+        return
+      }
+
+      router.push(returnUrl)
+      router.refresh()
+    } catch {
+      setSubmitError("Something went wrong. Please try again.")
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -168,6 +202,12 @@ export function RegisterForm() {
             </div>
           </div>
         </div>
+
+        {submitError ? (
+          <p className="text-sm text-destructive" role="alert">
+            {submitError}
+          </p>
+        ) : null}
 
         <button type="submit" disabled={submitting} className={authPrimaryButtonClass}>
           {submitting ? "Creating…" : "Create Account"}

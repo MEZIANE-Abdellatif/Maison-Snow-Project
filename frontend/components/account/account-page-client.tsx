@@ -34,11 +34,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { useMockAuth } from "@/contexts/mock-auth-context"
+import { signOut, useSession } from "next-auth/react"
 import {
   ADDRESS_COUNTRIES,
   MOCK_ADDRESSES,
-  MOCK_ORDERS,
   type MockOrder,
   type MockOrderLine,
   type MockSavedAddress,
@@ -676,7 +675,35 @@ function AddressesSection() {
 export function AccountPageClient() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { session, displayFirstName, signOut } = useMockAuth()
+  const { data: session } = useSession()
+  const [orders, setOrders] = useState<MockOrder[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadOrders() {
+      setOrdersLoading(true)
+      try {
+        const res = await fetch("/api/orders")
+        if (!res.ok) {
+          if (!cancelled) setOrders([])
+          return
+        }
+        const data = (await res.json()) as MockOrder[]
+        if (!cancelled) setOrders(data)
+      } catch {
+        if (!cancelled) setOrders([])
+      } finally {
+        if (!cancelled) setOrdersLoading(false)
+      }
+    }
+
+    void loadOrders()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const tabFromUrl = searchParams.get("tab")
   const activeTab: AccountTab = useMemo(
@@ -697,10 +724,14 @@ export function AccountPageClient() {
     [router],
   )
 
-  const greetingName = displayFirstName || "Guest"
-  const email = session?.email ?? "guest@example.com"
-  const profileFirst = session?.firstName?.trim() || ""
-  const profileLast = session?.lastName?.trim() || ""
+  const greetingName = session?.user?.firstName?.trim() || "Guest"
+  const email = session?.user?.email ?? ""
+  const profileFirst = session?.user?.firstName?.trim() || ""
+  const profileLast = session?.user?.lastName?.trim() || ""
+
+  const handleSignOut = () => {
+    void signOut({ callbackUrl: "/" })
+  }
 
   const navItemClass = (tab: AccountTab) =>
     cn(
@@ -747,11 +778,7 @@ export function AccountPageClient() {
                     mutedLinkClass,
                     "w-full justify-center rounded-sm border border-border bg-card py-2.5 transition-colors hover:bg-muted/40 hover:text-foreground",
                   )}
-                  onClick={() => {
-                    signOut()
-                    router.push("/")
-                    router.refresh()
-                  }}
+                  onClick={handleSignOut}
                 >
                   Logout
                 </button>
@@ -800,7 +827,15 @@ export function AccountPageClient() {
             </div>
 
             <div key={activeTab} className="animate-in fade-in-0 w-full duration-300">
-                {activeTab === "orders" ? <OrdersSection orders={MOCK_ORDERS} /> : null}
+                {activeTab === "orders" ? (
+                  ordersLoading ? (
+                    <AccountSectionCard title="Your Orders" sectionId="orders">
+                      <p className="text-sm text-muted-foreground">Loading your orders…</p>
+                    </AccountSectionCard>
+                  ) : (
+                    <OrdersSection orders={orders} />
+                  )
+                ) : null}
                 {activeTab === "profile" ? (
                   <ProfileSection
                     email={email}
@@ -819,11 +854,7 @@ export function AccountPageClient() {
                   mutedLinkClass,
                   "min-h-11 justify-center rounded-sm border border-border bg-card px-6 py-2.5 transition-colors hover:bg-muted/40",
                 )}
-                onClick={() => {
-                  signOut()
-                  router.push("/")
-                  router.refresh()
-                }}
+                onClick={handleSignOut}
               >
                 Logout
               </button>

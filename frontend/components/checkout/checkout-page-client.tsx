@@ -2,7 +2,8 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { Fragment, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { signIn, useSession } from "next-auth/react"
 import { Check, Loader2, Lock } from "lucide-react"
 
 import { checkEmail } from "@/lib/checkout-mock-email"
@@ -116,6 +117,7 @@ function ReadOnlyCartLines() {
 
 export function CheckoutPageClient() {
   const { lines } = useCart()
+  const { data: session, status: sessionStatus } = useSession()
   const [step, setStep] = useState(0)
   const [email, setEmail] = useState("")
   const [emailUi, setEmailUi] = useState<EmailUiState>("collect")
@@ -128,6 +130,22 @@ export function CheckoutPageClient() {
   const [postal, setPostal] = useState("")
   const [country, setCountry] = useState("pl")
   const [shipMethod, setShipMethod] = useState<ShipMethod>("standard")
+  const [signInError, setSignInError] = useState<string | null>(null)
+
+  const isAuthenticated = sessionStatus === "authenticated" && Boolean(session?.user)
+
+  useEffect(() => {
+    if (!isAuthenticated || !session?.user) return
+
+    if (session.user.email) {
+      setEmail(session.user.email)
+    }
+    const name = [session.user.firstName, session.user.lastName].filter(Boolean).join(" ").trim()
+    if (name) {
+      setFullName(name)
+    }
+    setStep(1)
+  }, [isAuthenticated, session])
 
   const subtotal = useMemo(
     () => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0),
@@ -163,10 +181,21 @@ export function CheckoutPageClient() {
     if (!emailValid) return
     if (emailUi === "signin") {
       if (!password.trim()) return
+      setSignInError(null)
+      const result = await signIn("credentials", {
+        email: email.trim().toLowerCase(),
+        password,
+        redirect: false,
+      })
+      if (result?.error) {
+        setSignInError("Invalid email or password")
+        return
+      }
       setStep(1)
       return
     }
     setEmailUi("checking")
+    setSignInError(null)
     const result = await checkEmail(email)
     if (!result.found) {
       setEmailUi("collect")
@@ -215,7 +244,7 @@ export function CheckoutPageClient() {
 
       <div className="flex flex-col gap-10 lg:flex-row lg:items-start lg:gap-12">
         <div className="min-w-0 flex-1 lg:w-[65%] lg:max-w-[65%]">
-          {step === 0 ? (
+          {step === 0 && !isAuthenticated ? (
             <section aria-labelledby="checkout-email-heading" className="max-w-xl">
               <h1
                 id="checkout-email-heading"
@@ -295,6 +324,12 @@ export function CheckoutPageClient() {
                   </div>
                 </div>
               </div>
+
+              {signInError ? (
+                <p className="mt-3 text-sm text-destructive" role="alert">
+                  {signInError}
+                </p>
+              ) : null}
 
               <p className="mt-5 text-center">
                 {guestLinkEnabled ? (

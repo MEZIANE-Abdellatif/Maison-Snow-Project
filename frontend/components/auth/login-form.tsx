@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useMemo, useState } from "react"
+import { signIn } from "next-auth/react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Eye, EyeOff } from "lucide-react"
 
@@ -17,7 +18,6 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { sanitizeAuthReturnUrl, withReturnUrl } from "@/lib/auth-return-url"
-import { setMockSession } from "@/lib/mock-auth"
 
 export function LoginForm() {
   const router = useRouter()
@@ -31,12 +31,28 @@ export function LoginForm() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email.trim() || !password) return
+
     setSubmitting(true)
-    setMockSession({ email: email.trim() })
+    setError(null)
+
+    const result = await signIn("credentials", {
+      email: email.trim().toLowerCase(),
+      password,
+      redirect: false,
+    })
+
+    setSubmitting(false)
+
+    if (result?.error) {
+      setError("Invalid email or password")
+      return
+    }
+
     router.push(returnUrl)
     router.refresh()
   }
@@ -85,6 +101,12 @@ export function LoginForm() {
             </button>
           </div>
         </div>
+
+        {error ? (
+          <p className="text-sm text-destructive" role="alert">
+            {error}
+          </p>
+        ) : null}
 
         <div className="flex justify-end pt-0">
           <Link href={withReturnUrl("/forgot-password", returnUrl)} className={`text-xs ${authGoldLinkClass}`}>
