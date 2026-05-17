@@ -71,16 +71,29 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
 
-    const { email, userId, shippingName, shippingPhone, shippingAddress, shippingCost, items } =
-      body as {
-        email?: string
-        userId?: string
-        shippingName?: string
-        shippingPhone?: string
-        shippingAddress?: string
-        shippingCost?: number
-        items?: OrderItemInput[]
-      }
+    const {
+      id: orderId,
+      email,
+      userId,
+      shippingName,
+      shippingPhone,
+      shippingAddress,
+      shippingCost,
+      items,
+      stripePaymentId,
+      paymentStatus,
+    } = body as {
+      id?: string
+      email?: string
+      userId?: string
+      shippingName?: string
+      shippingPhone?: string
+      shippingAddress?: string
+      shippingCost?: number
+      items?: OrderItemInput[]
+      stripePaymentId?: string
+      paymentStatus?: "PAID" | "PENDING" | "FAILED"
+    }
 
     if (!email || !shippingName || !shippingPhone || !shippingAddress || shippingCost == null) {
       return NextResponse.json(
@@ -126,6 +139,7 @@ export async function POST(request: NextRequest) {
 
       return tx.order.create({
         data: {
+          ...(orderId ? { id: orderId } : {}),
           userId: userId || null,
           guestEmail: userId ? null : email,
           shippingName,
@@ -134,6 +148,8 @@ export async function POST(request: NextRequest) {
           subtotal,
           shippingCost,
           total,
+          paymentStatus: paymentStatus ?? "PENDING",
+          stripePaymentId: stripePaymentId ?? null,
           items: {
             create: items.map((i) => ({
               productId: i.productId,

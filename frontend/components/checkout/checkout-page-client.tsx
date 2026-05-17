@@ -6,6 +6,8 @@ import { Fragment, useEffect, useMemo, useState } from "react"
 import { signIn, useSession } from "next-auth/react"
 import { Check, Loader2, Lock } from "lucide-react"
 
+import { cn } from "@/lib/utils"
+
 import { checkEmail } from "@/lib/checkout-mock-email"
 
 import {
@@ -15,15 +17,13 @@ import {
 import { useCart } from "@/contexts/cart-context"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { formatPrice } from "@/lib/shop-data"
+import {
+  CheckoutPaymentStep,
+  formatShippingAddress,
+  type CheckoutOrderPayload,
+} from "@/components/checkout/checkout-payment-step"
 
 const STEPS = [
   { id: "email", label: "Email" },
@@ -42,6 +42,111 @@ function emailLooksValid(value: string) {
 }
 
 type EmailUiState = "collect" | "checking" | "signin"
+
+type AddressFieldKey = "streetName" | "buildingNumber" | "apartment" | "city" | "postal"
+
+const BUILDING_NUMBER_REGEX = /^[0-9]+[A-Za-z0-9/]*$/
+const POSTAL_CODE_REGEX = /^\d{2}-\d{3}$/
+
+function getAddressFieldError(field: AddressFieldKey, value: string): string | null {
+  const trimmed = value.trim()
+
+  switch (field) {
+    case "streetName":
+      if (!trimmed) return "Street name is required"
+      if (trimmed.length < 3) return "Street name must be at least 3 characters"
+      return null
+    case "buildingNumber":
+      if (!trimmed) return "Building number is required"
+      if (!BUILDING_NUMBER_REGEX.test(trimmed)) {
+        return "Enter a valid building number (e.g. 10, 10A, 10/2)"
+      }
+      return null
+    case "apartment":
+      if (!trimmed) return "Apartment is required"
+      if (!/^\d+$/.test(trimmed)) return "Apartment number must contain digits only"
+      return null
+    case "city":
+      if (!trimmed) return "City is required"
+      if (trimmed.length < 2) return "City must be at least 2 characters"
+      return null
+    case "postal":
+      if (!trimmed) return "Postal code is required"
+      if (!POSTAL_CODE_REGEX.test(trimmed)) {
+        return "Please enter a valid Polish postal code (00-000)"
+      }
+      return null
+    default:
+      return null
+  }
+}
+
+function isAddressFieldValid(field: AddressFieldKey, value: string): boolean {
+  return getAddressFieldError(field, value) === null
+}
+
+type AddressFieldProps = {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  onBlur: () => void
+  touched: boolean
+  error: string | null
+  placeholder?: string
+  autoComplete?: string
+}
+
+function AddressField({
+  id,
+  label,
+  value,
+  onChange,
+  onBlur,
+  touched,
+  error,
+  placeholder,
+  autoComplete,
+}: AddressFieldProps) {
+  const showError = touched && Boolean(error)
+  const showValid = touched && !error && value.trim().length > 0
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id} className="text-xs tracking-widest uppercase text-muted-foreground">
+        {label}
+      </Label>
+      <div className="relative">
+        <Input
+          id={id}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          aria-invalid={showError}
+          aria-describedby={showError ? `${id}-error` : undefined}
+          className={cn(
+            "min-h-11 bg-card pr-10 transition-colors focus-visible:border-gold focus-visible:ring-gold/60",
+            showError ? "border-destructive" : "border-border",
+          )}
+        />
+        {showValid ? (
+          <Check
+            className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-600"
+            strokeWidth={2.5}
+            aria-hidden
+          />
+        ) : null}
+      </div>
+      {showError ? (
+        <p id={`${id}-error`} className="text-sm text-destructive" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 function CheckoutProgress({ step }: { step: number }) {
   return (
@@ -116,7 +221,7 @@ function ReadOnlyCartLines() {
 }
 
 export function CheckoutPageClient() {
-  const { lines } = useCart()
+  const { lines, removeLine } = useCart()
   const { data: session, status: sessionStatus } = useSession()
   const [step, setStep] = useState(0)
   const [email, setEmail] = useState("")
@@ -125,12 +230,15 @@ export function CheckoutPageClient() {
   const [password, setPassword] = useState("")
   const [fullName, setFullName] = useState("")
   const [phone, setPhone] = useState("")
-  const [street, setStreet] = useState("")
+  const [streetName, setStreetName] = useState("")
+  const [buildingNumber, setBuildingNumber] = useState("")
+  const [apartment, setApartment] = useState("")
   const [city, setCity] = useState("")
   const [postal, setPostal] = useState("")
-  const [country, setCountry] = useState("pl")
+  const [addressTouched, setAddressTouched] = useState<Partial<Record<AddressFieldKey, boolean>>>({})
   const [shipMethod, setShipMethod] = useState<ShipMethod>("standard")
   const [signInError, setSignInError] = useState<string | null>(null)
+  const [paymentMountKey, setPaymentMountKey] = useState(0)
 
   const isAuthenticated = sessionStatus === "authenticated" && Boolean(session?.user)
 
@@ -165,6 +273,30 @@ export function CheckoutPageClient() {
   /** Guest path still requires a valid email; link stays off until the address is complete. */
   const guestLinkEnabled = emailValid
   const showPasswordBlock = emailUi === "signin"
+
+  const touchAddressField = (field: AddressFieldKey) => {
+    setAddressTouched((prev) => ({ ...prev, [field]: true }))
+  }
+
+  const touchAllAddressFields = () => {
+    setAddressTouched({
+      streetName: true,
+      buildingNumber: true,
+      apartment: true,
+      city: true,
+      postal: true,
+    })
+  }
+
+  const isShippingAddressValid = useMemo(
+    () =>
+      isAddressFieldValid("streetName", streetName) &&
+      isAddressFieldValid("buildingNumber", buildingNumber) &&
+      isAddressFieldValid("apartment", apartment) &&
+      isAddressFieldValid("city", city) &&
+      isAddressFieldValid("postal", postal),
+    [streetName, buildingNumber, apartment, city, postal],
+  )
 
   const onEmailChange = (value: string) => {
     setEmail(value)
@@ -403,60 +535,81 @@ export function CheckoutPageClient() {
               <div>
                 <h2 className="font-serif text-xl text-foreground mb-4">Shipping Address</h2>
                 <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="street" className="text-xs tracking-widest uppercase text-muted-foreground">
-                      Street address
-                    </Label>
-                    <Input
-                      id="street"
-                      value={street}
-                      onChange={(e) => setStreet(e.target.value)}
-                      autoComplete="street-address"
-                      className="min-h-11 border-border bg-card"
+                  <AddressField
+                    id="street-name"
+                    label="Street name"
+                    value={streetName}
+                    onChange={setStreetName}
+                    onBlur={() => touchAddressField("streetName")}
+                    touched={Boolean(addressTouched.streetName)}
+                    error={getAddressFieldError("streetName", streetName)}
+                    placeholder="e.g. ul. Marszałkowska"
+                    autoComplete="address-line1"
+                  />
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <AddressField
+                      id="building-number"
+                      label="Building number"
+                      value={buildingNumber}
+                      onChange={setBuildingNumber}
+                      onBlur={() => touchAddressField("buildingNumber")}
+                      touched={Boolean(addressTouched.buildingNumber)}
+                      error={getAddressFieldError("buildingNumber", buildingNumber)}
+                      placeholder="e.g. 10"
+                    />
+                    <AddressField
+                      id="apartment"
+                      label="Apartment"
+                      value={apartment}
+                      onChange={setApartment}
+                      onBlur={() => touchAddressField("apartment")}
+                      touched={Boolean(addressTouched.apartment)}
+                      error={getAddressFieldError("apartment", apartment)}
+                      placeholder="e.g. 12"
                     />
                   </div>
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label htmlFor="city" className="text-xs tracking-widest uppercase text-muted-foreground">
-                        City
-                      </Label>
-                      <Input
-                        id="city"
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        autoComplete="address-level2"
-                        className="min-h-11 border-border bg-card"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="postal" className="text-xs tracking-widest uppercase text-muted-foreground">
-                        Postal code
-                      </Label>
-                      <Input
-                        id="postal"
-                        value={postal}
-                        onChange={(e) => setPostal(e.target.value)}
-                        autoComplete="postal-code"
-                        className="min-h-11 border-border bg-card"
-                      />
-                    </div>
+                    <AddressField
+                      id="city"
+                      label="City"
+                      value={city}
+                      onChange={setCity}
+                      onBlur={() => touchAddressField("city")}
+                      touched={Boolean(addressTouched.city)}
+                      error={getAddressFieldError("city", city)}
+                      placeholder="e.g. Warszawa"
+                      autoComplete="address-level2"
+                    />
+                    <AddressField
+                      id="postal"
+                      label="Postal code"
+                      value={postal}
+                      onChange={setPostal}
+                      onBlur={() => touchAddressField("postal")}
+                      touched={Boolean(addressTouched.postal)}
+                      error={getAddressFieldError("postal", postal)}
+                      placeholder="00-000"
+                      autoComplete="postal-code"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="country" className="text-xs tracking-widest uppercase text-muted-foreground">
                       Country
                     </Label>
-                    <Select value={country} onValueChange={setCountry}>
-                      <SelectTrigger id="country" className="min-h-11 w-full border-border bg-card">
-                        <SelectValue placeholder="Country" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pl">Poland</SelectItem>
-                        <SelectItem value="fr">France</SelectItem>
-                        <SelectItem value="ma">Morocco</SelectItem>
-                        <SelectItem value="us">United States</SelectItem>
-                        <SelectItem value="uk">United Kingdom</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <div className="relative">
+                      <Input
+                        id="country"
+                        value="Poland"
+                        disabled
+                        readOnly
+                        aria-readonly
+                        className="min-h-11 border-border bg-muted/30 pr-10 text-foreground"
+                      />
+                      <Lock
+                        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold"
+                        aria-hidden
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -499,7 +652,12 @@ export function CheckoutPageClient() {
 
               <button
                 type="button"
-                onClick={() => setStep(2)}
+                onClick={() => {
+                  touchAllAddressFields()
+                  if (!isShippingAddressValid) return
+                  setPaymentMountKey((key) => key + 1)
+                  setStep(2)
+                }}
                 className="flex min-h-12 w-full max-w-md items-center justify-center bg-primary px-6 py-3 text-xs tracking-widest uppercase text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
                 Continue to Payment
@@ -513,43 +671,42 @@ export function CheckoutPageClient() {
                 Payment
               </h1>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                Card processing is not connected. This step is a layout preview only.
+                Pay securely with card. Your order is created only after payment succeeds.
               </p>
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="card-name" className="text-xs tracking-widest uppercase text-muted-foreground">
-                    Name on card
-                  </Label>
-                  <Input id="card-name" className="min-h-11 border-border bg-card" placeholder="As shown on card" />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="card-number" className="text-xs tracking-widest uppercase text-muted-foreground">
-                    Card number
-                  </Label>
-                  <Input id="card-number" className="min-h-11 border-border bg-card" placeholder="0000 0000 0000 0000" />
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label htmlFor="exp" className="text-xs tracking-widest uppercase text-muted-foreground">
-                      Expiry
-                    </Label>
-                    <Input id="exp" className="min-h-11 border-border bg-card" placeholder="MM / YY" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="cvc" className="text-xs tracking-widest uppercase text-muted-foreground">
-                      CVC
-                    </Label>
-                    <Input id="cvc" className="min-h-11 border-border bg-card" placeholder="123" />
-                  </div>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setStep(3)}
-                className="flex min-h-12 w-full max-w-md items-center justify-center bg-primary px-6 py-3 text-xs tracking-widest uppercase text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-              >
-                Place order
-              </button>
+              <CheckoutPaymentStep
+                key={paymentMountKey}
+                total={total}
+                onBack={() => setStep(1)}
+                buildOrderPayload={(stripePaymentId, orderId): CheckoutOrderPayload => ({
+                  orderId,
+                  email: email.trim().toLowerCase(),
+                  userId: session?.user?.id,
+                  shippingName: fullName.trim(),
+                  shippingPhone: phone.trim(),
+                  shippingAddress: formatShippingAddress(
+                    streetName,
+                    buildingNumber,
+                    apartment,
+                    city,
+                    postal,
+                  ),
+                  shippingCost: shippingFee,
+                  stripePaymentId,
+                  items: lines.map((line) => ({
+                    productId: line.productId,
+                    productName: line.name,
+                    price: line.unitPrice,
+                    size: line.size ?? "One size",
+                    quantity: line.quantity,
+                  })),
+                })}
+                onSuccess={() => {
+                  for (const line of lines) {
+                    removeLine(line.lineId)
+                  }
+                  setStep(3)
+                }}
+              />
             </section>
           ) : null}
 
@@ -562,7 +719,7 @@ export function CheckoutPageClient() {
                 Order confirmed
               </h1>
               <p className="mt-4 text-sm text-muted-foreground leading-relaxed">
-                Thank you. This checkout is a front-end preview—no payment was processed.
+                Thank you for your order. A confirmation email will be sent shortly.
               </p>
               <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
                 <Link
