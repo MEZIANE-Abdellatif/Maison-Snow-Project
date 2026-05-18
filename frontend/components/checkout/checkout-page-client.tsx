@@ -21,9 +21,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { formatPrice } from "@/lib/shop-data"
 import {
   CheckoutPaymentStep,
+  formatParcelLockerShippingAddress,
   formatShippingAddress,
   type CheckoutOrderPayload,
 } from "@/components/checkout/checkout-payment-step"
+import { InPostGeowidget, INPOST_MOCK_LOCKERS } from "@/components/InPostGeowidget"
 
 const STEPS = [
   { id: "email", label: "Email" },
@@ -32,10 +34,12 @@ const STEPS = [
   { id: "confirmed", label: "Confirmed" },
 ] as const
 
-type ShipMethod = "standard" | "express"
+type DeliveryMode = "parcel_locker" | "home"
+type HomeCarrier = "inpost_courier" | "poczta_polska"
 
-/** Mock express fee (shown as PLN in UI; added numerically to subtotal for demo). */
-const EXPRESS_FEE = 25
+const FEE_PARCEL_LOCKER = 12
+const FEE_HOME_INPOST = 15
+const FEE_HOME_POCHTA = 12
 
 function emailLooksValid(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
@@ -47,6 +51,12 @@ type AddressFieldKey = "streetName" | "buildingNumber" | "apartment" | "city" | 
 
 const BUILDING_NUMBER_REGEX = /^[0-9]+[A-Za-z0-9/]*$/
 const POSTAL_CODE_REGEX = /^\d{2}-\d{3}$/
+
+function normalizePolishPostalInput(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 5)
+  if (digits.length <= 2) return digits
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`
+}
 
 function getAddressFieldError(field: AddressFieldKey, value: string): string | null {
   const trimmed = value.trim()
@@ -63,8 +73,8 @@ function getAddressFieldError(field: AddressFieldKey, value: string): string | n
       }
       return null
     case "apartment":
-      if (!trimmed) return "Apartment is required"
-      if (!/^\d+$/.test(trimmed)) return "Apartment number must contain digits only"
+      if (!trimmed) return "Apartment / floor is required"
+      if (trimmed.length < 2) return "Enter at least 2 characters"
       return null
     case "city":
       if (!trimmed) return "City is required"
@@ -95,6 +105,8 @@ type AddressFieldProps = {
   error: string | null
   placeholder?: string
   autoComplete?: string
+  /** Transform raw input (e.g. postal auto-format) */
+  normalizeOnChange?: (raw: string) => string
 }
 
 function AddressField({
@@ -107,6 +119,7 @@ function AddressField({
   error,
   placeholder,
   autoComplete,
+  normalizeOnChange,
 }: AddressFieldProps) {
   const showError = touched && Boolean(error)
   const showValid = touched && !error && value.trim().length > 0
@@ -120,7 +133,10 @@ function AddressField({
         <Input
           id={id}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            const next = normalizeOnChange ? normalizeOnChange(e.target.value) : e.target.value
+            onChange(next)
+          }}
           onBlur={onBlur}
           placeholder={placeholder}
           autoComplete={autoComplete}
@@ -236,7 +252,10 @@ export function CheckoutPageClient() {
   const [city, setCity] = useState("")
   const [postal, setPostal] = useState("")
   const [addressTouched, setAddressTouched] = useState<Partial<Record<AddressFieldKey, boolean>>>({})
-  const [shipMethod, setShipMethod] = useState<ShipMethod>("standard")
+  const [deliveryMode, setDeliveryMode] = useState<DeliveryMode>("parcel_locker")
+  const [homeCarrier, setHomeCarrier] = useState<HomeCarrier>("inpost_courier")
+  const [selectedLockerId, setSelectedLockerId] = useState("")
+  const [lockerTouched, setLockerTouched] = useState(false)
   const [signInError, setSignInError] = useState<string | null>(null)
   const [paymentMountKey, setPaymentMountKey] = useState(0)
 
@@ -260,13 +279,18 @@ export function CheckoutPageClient() {
     [lines],
   )
 
-  const shippingFee = step >= 1 && shipMethod === "express" ? EXPRESS_FEE : 0
-  const shippingRight =
-    step < 1
-      ? "Calculated at next step"
-      : shipMethod === "standard"
-        ? "Free"
-        : "25 PLN"
+  const shippingFee = useMemo(() => {
+    if (step < 1) return 0
+    if (deliveryMode === "parcel_locker") return FEE_PARCEL_LOCKER
+    return homeCarrier === "inpost_courier" ? FEE_HOME_INPOST : FEE_HOME_POCHTA
+  }, [step, deliveryMode, homeCarrier])
+
+  const shippingRight = useMemo(() => {
+    if (step < 1) return "Calculated at next step"
+    if (deliveryMode === "parcel_locker") return `${formatPrice(FEE_PARCEL_LOCKER)}`
+    if (homeCarrier === "inpost_courier") return `${formatPrice(FEE_HOME_INPOST)}`
+    return `${formatPrice(FEE_HOME_POCHTA)}`
+  }, [step, deliveryMode, homeCarrier])
   const total = step < 1 ? subtotal : subtotal + shippingFee
 
   const emailValid = emailLooksValid(email)
@@ -533,128 +557,204 @@ export function CheckoutPageClient() {
               </div>
 
               <div>
-                <h2 className="font-serif text-xl text-foreground mb-4">Shipping Address</h2>
-                <div className="space-y-4">
-                  <AddressField
-                    id="street-name"
-                    label="Street name"
-                    value={streetName}
-                    onChange={setStreetName}
-                    onBlur={() => touchAddressField("streetName")}
-                    touched={Boolean(addressTouched.streetName)}
-                    error={getAddressFieldError("streetName", streetName)}
-                    placeholder="e.g. ul. Marszałkowska"
-                    autoComplete="address-line1"
-                  />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <AddressField
-                      id="building-number"
-                      label="Building number"
-                      value={buildingNumber}
-                      onChange={setBuildingNumber}
-                      onBlur={() => touchAddressField("buildingNumber")}
-                      touched={Boolean(addressTouched.buildingNumber)}
-                      error={getAddressFieldError("buildingNumber", buildingNumber)}
-                      placeholder="e.g. 10"
+                <h2 className="font-serif text-xl text-foreground mb-4">Delivery</h2>
+                <p className="mb-4 text-xs tracking-widest uppercase text-muted-foreground" id="delivery-mode-label">
+                  Delivery method
+                </p>
+                <div
+                  className="grid gap-3 sm:grid-cols-2"
+                  role="radiogroup"
+                  aria-labelledby="delivery-mode-label"
+                >
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={deliveryMode === "parcel_locker"}
+                    onClick={() => setDeliveryMode("parcel_locker")}
+                    className={`rounded-sm border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                      deliveryMode === "parcel_locker"
+                        ? "border-gold bg-cream-dark/40"
+                        : "border-border bg-card hover:border-gold/40"
+                    }`}
+                  >
+                    <p className="font-medium text-foreground">Parcel Locker</p>
+                    <p className="mt-1 text-sm text-gold">InPost — 12 PLN</p>
+                    <p className="mt-2 text-xs text-muted-foreground">1-2 days</p>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={deliveryMode === "home"}
+                    onClick={() => setDeliveryMode("home")}
+                    className={`rounded-sm border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                      deliveryMode === "home"
+                        ? "border-gold bg-cream-dark/40"
+                        : "border-border bg-card hover:border-gold/40"
+                    }`}
+                  >
+                    <p className="font-medium text-foreground">Home Delivery</p>
+                    <p className="mt-1 text-sm text-muted-foreground">Choose carrier below</p>
+                    <p className="mt-2 text-xs text-muted-foreground"> </p>
+                  </button>
+                </div>
+
+                {deliveryMode === "parcel_locker" ? (
+                  <div className="mt-8 space-y-2">
+                    <InPostGeowidget
+                      selectedLockerId={selectedLockerId}
+                      onLockerSelect={(id) => {
+                        setSelectedLockerId(id)
+                        setLockerTouched(false)
+                      }}
                     />
-                    <AddressField
-                      id="apartment"
-                      label="Apartment"
-                      value={apartment}
-                      onChange={setApartment}
-                      onBlur={() => touchAddressField("apartment")}
-                      touched={Boolean(addressTouched.apartment)}
-                      error={getAddressFieldError("apartment", apartment)}
-                      placeholder="e.g. 12"
-                    />
+                    {lockerTouched && !selectedLockerId ? (
+                      <p className="text-sm text-destructive" role="alert">
+                        Please select a parcel locker
+                      </p>
+                    ) : null}
                   </div>
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <AddressField
-                      id="city"
-                      label="City"
-                      value={city}
-                      onChange={setCity}
-                      onBlur={() => touchAddressField("city")}
-                      touched={Boolean(addressTouched.city)}
-                      error={getAddressFieldError("city", city)}
-                      placeholder="e.g. Warszawa"
-                      autoComplete="address-level2"
-                    />
-                    <AddressField
-                      id="postal"
-                      label="Postal code"
-                      value={postal}
-                      onChange={setPostal}
-                      onBlur={() => touchAddressField("postal")}
-                      touched={Boolean(addressTouched.postal)}
-                      error={getAddressFieldError("postal", postal)}
-                      placeholder="00-000"
-                      autoComplete="postal-code"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="country" className="text-xs tracking-widest uppercase text-muted-foreground">
-                      Country
-                    </Label>
-                    <div className="relative">
-                      <Input
-                        id="country"
-                        value="Poland"
-                        disabled
-                        readOnly
-                        aria-readonly
-                        className="min-h-11 border-border bg-muted/30 pr-10 text-foreground"
-                      />
-                      <Lock
-                        className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold"
-                        aria-hidden
-                      />
+                ) : null}
+
+                {deliveryMode === "home" ? (
+                  <div className="mt-8 space-y-8">
+                    <div>
+                      <p className="mb-3 text-xs tracking-widest uppercase text-muted-foreground" id="home-carrier-label">
+                        Carrier
+                      </p>
+                      <div
+                        className="grid gap-3 sm:grid-cols-2"
+                        role="radiogroup"
+                        aria-labelledby="home-carrier-label"
+                      >
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={homeCarrier === "inpost_courier"}
+                          onClick={() => setHomeCarrier("inpost_courier")}
+                          className={`rounded-sm border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                            homeCarrier === "inpost_courier"
+                              ? "border-gold bg-cream-dark/40"
+                              : "border-border bg-card hover:border-gold/40"
+                          }`}
+                        >
+                          <p className="font-medium text-foreground">InPost courier</p>
+                          <p className="mt-1 text-sm text-gold">15 PLN</p>
+                          <p className="mt-2 text-xs text-muted-foreground">1-2 business days</p>
+                        </button>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={homeCarrier === "poczta_polska"}
+                          onClick={() => setHomeCarrier("poczta_polska")}
+                          className={`rounded-sm border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
+                            homeCarrier === "poczta_polska"
+                              ? "border-gold bg-cream-dark/40"
+                              : "border-border bg-card hover:border-gold/40"
+                          }`}
+                        >
+                          <p className="font-medium text-foreground">Poczta Polska</p>
+                          <p className="mt-1 text-sm text-gold">12 PLN</p>
+                          <p className="mt-2 text-xs text-muted-foreground">4-7 business days</p>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="font-serif text-lg text-foreground mb-4">Delivery address</h3>
+                      <div className="space-y-4">
+                        <AddressField
+                          id="street-name"
+                          label="Street name"
+                          value={streetName}
+                          onChange={setStreetName}
+                          onBlur={() => touchAddressField("streetName")}
+                          touched={Boolean(addressTouched.streetName)}
+                          error={getAddressFieldError("streetName", streetName)}
+                          placeholder="e.g. ul. Marszałkowska"
+                          autoComplete="address-line1"
+                        />
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <AddressField
+                            id="building-number"
+                            label="Building number"
+                            value={buildingNumber}
+                            onChange={setBuildingNumber}
+                            onBlur={() => touchAddressField("buildingNumber")}
+                            touched={Boolean(addressTouched.buildingNumber)}
+                            error={getAddressFieldError("buildingNumber", buildingNumber)}
+                            placeholder="e.g. 10"
+                          />
+                          <AddressField
+                            id="apartment"
+                            label="Apartment / Floor"
+                            value={apartment}
+                            onChange={setApartment}
+                            onBlur={() => touchAddressField("apartment")}
+                            touched={Boolean(addressTouched.apartment)}
+                            error={getAddressFieldError("apartment", apartment)}
+                            placeholder="e.g. Apt 5, Floor 2, House, Villa"
+                          />
+                        </div>
+                        <div className="grid gap-4 sm:grid-cols-2">
+                          <AddressField
+                            id="city"
+                            label="City"
+                            value={city}
+                            onChange={setCity}
+                            onBlur={() => touchAddressField("city")}
+                            touched={Boolean(addressTouched.city)}
+                            error={getAddressFieldError("city", city)}
+                            placeholder="e.g. Warszawa"
+                            autoComplete="address-level2"
+                          />
+                          <AddressField
+                            id="postal"
+                            label="Postal code"
+                            value={postal}
+                            onChange={setPostal}
+                            onBlur={() => touchAddressField("postal")}
+                            touched={Boolean(addressTouched.postal)}
+                            error={getAddressFieldError("postal", postal)}
+                            placeholder="00-000"
+                            autoComplete="postal-code"
+                            normalizeOnChange={normalizePolishPostalInput}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="country" className="text-xs tracking-widest uppercase text-muted-foreground">
+                            Country
+                          </Label>
+                          <div className="relative">
+                            <Input
+                              id="country"
+                              value="Poland"
+                              disabled
+                              readOnly
+                              aria-readonly
+                              className="min-h-11 border-border bg-muted/30 pr-10 text-foreground"
+                            />
+                            <Lock
+                              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gold"
+                              aria-hidden
+                            />
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div>
-                <h2 className="font-serif text-xl text-foreground mb-4">Shipping Method</h2>
-                <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Shipping method">
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={shipMethod === "standard"}
-                    onClick={() => setShipMethod("standard")}
-                    className={`rounded-sm border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-                      shipMethod === "standard"
-                        ? "border-gold bg-cream-dark/40"
-                        : "border-border bg-card hover:border-gold/40"
-                    }`}
-                  >
-                    <p className="font-medium text-foreground">Standard</p>
-                    <p className="mt-1 text-sm text-gold">Free</p>
-                    <p className="mt-2 text-xs text-muted-foreground">5 to 7 business days</p>
-                  </button>
-                  <button
-                    type="button"
-                    role="radio"
-                    aria-checked={shipMethod === "express"}
-                    onClick={() => setShipMethod("express")}
-                    className={`rounded-sm border-2 p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
-                      shipMethod === "express"
-                        ? "border-gold bg-cream-dark/40"
-                        : "border-border bg-card hover:border-gold/40"
-                    }`}
-                  >
-                    <p className="font-medium text-foreground">Express</p>
-                    <p className="mt-1 text-sm text-gold">25 PLN</p>
-                    <p className="mt-2 text-xs text-muted-foreground">2 to 3 business days</p>
-                  </button>
-                </div>
+                ) : null}
               </div>
 
               <button
                 type="button"
                 onClick={() => {
-                  touchAllAddressFields()
-                  if (!isShippingAddressValid) return
+                  if (deliveryMode === "parcel_locker") {
+                    setLockerTouched(true)
+                    if (!selectedLockerId) return
+                  } else {
+                    touchAllAddressFields()
+                    if (!isShippingAddressValid) return
+                  }
                   setPaymentMountKey((key) => key + 1)
                   setStep(2)
                 }}
@@ -683,13 +783,21 @@ export function CheckoutPageClient() {
                   userId: session?.user?.id,
                   shippingName: fullName.trim(),
                   shippingPhone: phone.trim(),
-                  shippingAddress: formatShippingAddress(
-                    streetName,
-                    buildingNumber,
-                    apartment,
-                    city,
-                    postal,
-                  ),
+                  shippingAddress: (() => {
+                    if (deliveryMode === "parcel_locker") {
+                      const locker = INPOST_MOCK_LOCKERS.find((l) => l.id === selectedLockerId)
+                      return locker
+                        ? formatParcelLockerShippingAddress(locker.name, locker.address)
+                        : ""
+                    }
+                    return formatShippingAddress(
+                      streetName,
+                      buildingNumber,
+                      apartment,
+                      city,
+                      postal,
+                    )
+                  })(),
                   shippingCost: shippingFee,
                   stripePaymentId,
                   items: lines.map((line) => ({

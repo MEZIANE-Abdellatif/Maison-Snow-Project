@@ -273,3 +273,7 @@ export function formatShippingAddress(
   const line1 = `${streetName.trim()} ${buildingNumber.trim()}, ${apartment.trim()}`
   return [line1, `${postal.trim()} ${city.trim()}`, "Poland"].filter(Boolean).join("\n")
 }
+
+export function formatParcelLockerShippingAddress(lockerName: string, lockerAddress: string): string {
+  return [`InPost parcel locker — ${lockerName.trim()}`, lockerAddress.trim(), "Poland"].filter(Boolean).join("\n")
+}
