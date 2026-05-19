@@ -50,6 +50,8 @@ model Address {
   id         String  @id @default(uuid()) @db.Uuid
   userId     String  @db.Uuid
   street     String
+  building   String
+  apartment  String?
   city       String
   postalCode String
   country    String

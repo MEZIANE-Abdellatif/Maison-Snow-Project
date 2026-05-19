@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
             price: true,
             quantity: true,
             size: true,
+            product: { select: { images: true } },
           },
         },
       },
@@ -40,14 +41,17 @@ export async function GET(request: NextRequest) {
       placedAt: order.createdAt.toISOString(),
       total: order.total,
       status: mapDeliveryStatus(order.deliveryStatus),
-      items: order.items.map((item) => ({
-        id: item.id,
-        name: item.productName,
-        image: "/images/product1.jpg",
-        imageAlt: item.productName,
-        qty: item.quantity,
-        price: item.price,
-      })),
+      items: order.items.map((item) => {
+        const productImage = item.product?.images?.[0]
+        return {
+          id: item.id,
+          name: item.productName,
+          image: productImage && productImage.length > 0 ? productImage : "/images/product1.jpg",
+          imageAlt: item.productName,
+          qty: item.quantity,
+          price: item.price,
+        }
+      }),
       shippingAddress: order.shippingAddress.split("\n").filter(Boolean),
       estimatedDelivery: "Delivery date will be confirmed by email",
     }))

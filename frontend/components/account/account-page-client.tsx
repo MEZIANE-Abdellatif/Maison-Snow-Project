@@ -35,14 +35,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { signOut, useSession } from "next-auth/react"
-import {
-  ADDRESS_COUNTRIES,
-  MOCK_ADDRESSES,
-  type MockOrder,
-  type MockOrderLine,
-  type MockSavedAddress,
-  type OrderStatus,
-} from "@/lib/account-mock-data"
+import { toast } from "sonner"
+import { ADDRESS_COUNTRIES, type UserAddress } from "@/lib/address-api"
+import type { MockOrder, MockOrderLine, OrderStatus } from "@/lib/account-mock-data"
+import { Toaster } from "@/components/ui/sonner"
 import { formatPrice } from "@/lib/shop-data"
 import { authLabelClass, authPrimaryButtonClass } from "@/components/auth/auth-field-styles"
 import { cn } from "@/lib/utils"
@@ -279,24 +275,57 @@ function OrdersSection({ orders }: { orders: MockOrder[] }) {
 }
 
 function ProfileSection({
-  email,
-  initialFirst,
-  initialLast,
-  initialPhone,
+  sessionEmail,
+  sessionFirst,
+  sessionLast,
 }: {
-  email: string
-  initialFirst: string
-  initialLast: string
-  initialPhone: string
+  sessionEmail: string
+  sessionFirst: string
+  sessionLast: string
 }) {
-  const [firstName, setFirstName] = useState(initialFirst)
-  const [lastName, setLastName] = useState(initialLast)
-  const [phone, setPhone] = useState(initialPhone)
+  const [profileLoading, setProfileLoading] = useState(true)
+  const [email, setEmail] = useState(sessionEmail)
+  const [firstName, setFirstName] = useState(sessionFirst)
+  const [lastName, setLastName] = useState(sessionLast)
+  const [phone, setPhone] = useState("")
+  const [savingProfile, setSavingProfile] = useState(false)
   const [passwordOpen, setPasswordOpen] = useState(false)
   const [showNew, setShowNew] = useState(false)
   const [currentPwd, setCurrentPwd] = useState("")
   const [newPwd, setNewPwd] = useState("")
   const [confirmPwd, setConfirmPwd] = useState("")
+  const [passwordError, setPasswordError] = useState<string | null>(null)
+  const [savingPassword, setSavingPassword] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+
+    async function loadProfile() {
+      setProfileLoading(true)
+      try {
+        const res = await fetch("/api/users/profile")
+        if (!res.ok) return
+        const data = (await res.json()) as {
+          firstName: string
+          lastName: string
+          email: string
+          phone: string | null
+        }
+        if (cancelled) return
+        setFirstName(data.firstName)
+        setLastName(data.lastName)
+        setEmail(data.email)
+        setPhone(data.phone ?? "")
+      } finally {
+        if (!cancelled) setProfileLoading(false)
+      }
+    }
+
+    void loadProfile()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   return (
     <AccountSectionCard title="Your Profile" sectionId="profile">
@@ -305,6 +334,38 @@ function ProfileSection({
         className="max-w-xl space-y-6"
         onSubmit={(e) => {
           e.preventDefault()
+          void (async () => {
+            setSavingProfile(true)
+            try {
+              const res = await fetch("/api/users/profile", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  firstName: firstName.trim(),
+                  lastName: lastName.trim(),
+                  phone: phone.trim() || null,
+                }),
+              })
+              if (!res.ok) {
+                toast.error("Failed to update profile")
+                return
+              }
+              const data = (await res.json()) as {
+                firstName: string
+                lastName: string
+                email: string
+                phone: string | null
+              }
+              setFirstName(data.firstName)
+              setLastName(data.lastName)
+              setPhone(data.phone ?? "")
+              toast.success("Profile updated")
+            } catch {
+              toast.error("Failed to update profile")
+            } finally {
+              setSavingProfile(false)
+            }
+          })()
         }}
       >
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
@@ -372,8 +433,12 @@ function ProfileSection({
           />
         </div>
 
-        <Button type="submit" className={cn(authPrimaryButtonClass, "w-full max-w-xs sm:w-auto sm:min-w-[11rem]")}>
-          Save Changes
+        <Button
+          type="submit"
+          disabled={profileLoading || savingProfile}
+          className={cn(authPrimaryButtonClass, "w-full max-w-xs sm:w-auto sm:min-w-[11rem]")}
+        >
+          {savingProfile ? "Saving…" : "Save Changes"}
         </Button>
       </form>
 
@@ -404,8 +469,50 @@ function ProfileSection({
             className="space-y-5 border-t border-account-gold-accent pt-6"
             onSubmit={(e) => {
               e.preventDefault()
+              if (newPwd !== confirmPwd) {
+                setPasswordError("New passwords do not match")
+                return
+              }
+              void (async () => {
+                setSavingPassword(true)
+                setPasswordError(null)
+                try {
+                  const res = await fetch("/api/users/profile/change-password", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      currentPassword: currentPwd,
+                      newPassword: newPwd,
+                    }),
+                  })
+                  const data = (await res.json().catch(() => ({}))) as { error?: string }
+                  if (res.status === 400) {
+                    setPasswordError(data.error ?? "Current password is incorrect")
+                    return
+                  }
+                  if (!res.ok) {
+                    setPasswordError("Could not update password")
+                    return
+                  }
+                  toast.success("Password updated")
+                  setPasswordOpen(false)
+                  setCurrentPwd("")
+                  setNewPwd("")
+                  setConfirmPwd("")
+                  setShowNew(false)
+                } catch {
+                  setPasswordError("Could not update password")
+                } finally {
+                  setSavingPassword(false)
+                }
+              })()
             }}
           >
+            {passwordError ? (
+              <p className="text-sm text-destructive" role="alert">
+                {passwordError}
+              </p>
+            ) : null}
             <div className="space-y-2">
               <Label htmlFor="pwd-current" className={authLabelClass}>
                 Current password
@@ -456,8 +563,12 @@ function ProfileSection({
               />
             </div>
             <div className="flex flex-col gap-4 pt-2 sm:flex-row sm:items-center">
-              <Button type="submit" className={cn(authPrimaryButtonClass, "w-full sm:w-auto sm:min-w-[11rem]")}>
-                Update Password
+              <Button
+                type="submit"
+                disabled={savingPassword}
+                className={cn(authPrimaryButtonClass, "w-full sm:w-auto sm:min-w-[11rem]")}
+              >
+                {savingPassword ? "Updating…" : "Update Password"}
               </Button>
               <button
                 type="button"
@@ -468,6 +579,7 @@ function ProfileSection({
                   setNewPwd("")
                   setConfirmPwd("")
                   setShowNew(false)
+                  setPasswordError(null)
                 }}
               >
                 Cancel
@@ -481,196 +593,293 @@ function ProfileSection({
   )
 }
 
-function formatAddressLines(a: MockSavedAddress): string[] {
-  return [`${a.street}`, `${a.city}, ${a.postalCode}`, a.country]
+function formatAddressLines(a: UserAddress): string[] {
+  const unit = [a.building, a.apartment].filter(Boolean).join(", ")
+  const streetLine = unit ? `${a.street} ${unit}` : a.street
+  return [streetLine, `${a.city}, ${a.postalCode}`, a.country]
 }
 
 function AddressesSection() {
-  const [addresses, setAddresses] = useState<MockSavedAddress[]>(() => [...MOCK_ADDRESSES])
+  const [addresses, setAddresses] = useState<UserAddress[]>([])
+  const [loading, setLoading] = useState(true)
   const [showAddForm, setShowAddForm] = useState(false)
   const [street, setStreet] = useState("")
+  const [building, setBuilding] = useState("")
+  const [apartment, setApartment] = useState("")
   const [city, setCity] = useState("")
   const [postalCode, setPostalCode] = useState("")
-  const [country, setCountry] = useState<string>(ADDRESS_COUNTRIES[0])
+  const [country, setCountry] = useState<string>("Poland")
+  const [saving, setSaving] = useState(false)
 
-  const setDefault = useCallback((id: string) => {
-    setAddresses((prev) => prev.map((a) => ({ ...a, isDefault: a.id === id })))
-  }, [])
-
-  const removeAddress = useCallback((id: string) => {
-    setAddresses((prev) => {
-      const next = prev.filter((a) => a.id !== id)
-      if (next.length && !next.some((a) => a.isDefault)) {
-        next[0] = { ...next[0], isDefault: true }
+  const loadAddresses = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await fetch("/api/users/addresses")
+      if (!res.ok) {
+        setAddresses([])
+        return
       }
-      return next
-    })
+      const data = (await res.json()) as UserAddress[]
+      setAddresses(data)
+    } catch {
+      setAddresses([])
+    } finally {
+      setLoading(false)
+    }
   }, [])
+
+  useEffect(() => {
+    void loadAddresses()
+  }, [loadAddresses])
+
+  const setDefault = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/users/addresses/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isDefault: true }),
+      })
+      if (!res.ok) {
+        toast.error("Could not update default address")
+        return
+      }
+      await loadAddresses()
+    },
+    [loadAddresses],
+  )
+
+  const removeAddress = useCallback(
+    async (id: string) => {
+      if (!window.confirm("Delete this address?")) return
+      const res = await fetch(`/api/users/addresses/${id}`, { method: "DELETE" })
+      if (!res.ok) {
+        toast.error("Could not delete address")
+        return
+      }
+      await loadAddresses()
+    },
+    [loadAddresses],
+  )
 
   const saveNewAddress = useCallback(
-    (e: FormEvent) => {
+    async (e: FormEvent) => {
       e.preventDefault()
-      if (!street.trim() || !city.trim() || !postalCode.trim()) return
-      const id = `a-${Date.now()}`
-      setAddresses((prev) => {
-        const next = prev.map((a) => ({ ...a, isDefault: false }))
-        next.push({
-          id,
-          street: street.trim(),
-          city: city.trim(),
-          postalCode: postalCode.trim(),
-          country,
-          isDefault: true,
+      if (!street.trim() || !building.trim() || !city.trim() || !postalCode.trim()) return
+      setSaving(true)
+      try {
+        const res = await fetch("/api/users/addresses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            street: street.trim(),
+            building: building.trim(),
+            apartment: apartment.trim(),
+            city: city.trim(),
+            postalCode: postalCode.trim(),
+            country: country.trim(),
+            isDefault: addresses.length === 0,
+          }),
         })
-        return next
-      })
-      setStreet("")
-      setCity("")
-      setPostalCode("")
-      setCountry(ADDRESS_COUNTRIES[0])
-      setShowAddForm(false)
+        const data = (await res.json().catch(() => ({}))) as { error?: string }
+        if (!res.ok) {
+          toast.error(data.error ?? "Could not save address")
+          return
+        }
+        setStreet("")
+        setBuilding("")
+        setApartment("")
+        setCity("")
+        setPostalCode("")
+        setCountry("Poland")
+        setShowAddForm(false)
+        await loadAddresses()
+        toast.success("Address saved")
+      } catch {
+        toast.error("Could not save address")
+      } finally {
+        setSaving(false)
+      }
     },
-    [street, city, postalCode, country],
+    [street, building, apartment, city, postalCode, country, addresses.length, loadAddresses],
   )
 
   return (
     <AccountSectionCard title="Your Addresses" sectionId="addresses">
-      <ul className="space-y-5">
-        {addresses.map((addr, index) => (
-          <li
-            key={addr.id}
-            className={cn(
-              "rounded-sm border border-border p-6 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-[border-color] duration-200 hover:border-account-gold-accent",
-              addr.isDefault
-                ? "border-l-[3px] border-l-account-gold-accent bg-card"
-                : index % 2 === 1
-                  ? "bg-account-order-stripe"
-                  : "bg-card",
-            )}
-          >
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <address className="not-italic text-sm leading-relaxed text-foreground">
-                {formatAddressLines(addr).map((line) => (
-                  <span key={line} className="block">
-                    {line}
-                  </span>
-                ))}
-              </address>
-              <div className="flex shrink-0 flex-col gap-3 sm:items-end">
-                {addr.isDefault ? (
-                  <span className="inline-flex w-fit items-center rounded-sm border border-account-gold-accent/50 bg-account-gold-accent/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-account-gold-accent">
-                    Default
-                  </span>
-                ) : (
-                  <button type="button" className={goldLinkClass} onClick={() => setDefault(addr.id)}>
-                    Set as default
-                  </button>
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading addresses…</p>
+      ) : (
+        <>
+          <ul className="space-y-5">
+            {addresses.map((addr, index) => (
+              <li
+                key={addr.id}
+                className={cn(
+                  "rounded-sm border border-border p-6 shadow-[0_2px_12px_rgba(0,0,0,0.06)] transition-[border-color] duration-200 hover:border-account-gold-accent",
+                  addr.isDefault
+                    ? "border-l-[3px] border-l-account-gold-accent bg-card"
+                    : index % 2 === 1
+                      ? "bg-account-order-stripe"
+                      : "bg-card",
                 )}
-                <button type="button" className={mutedLinkClass} onClick={() => removeAddress(addr.id)}>
-                  Delete
-                </button>
-              </div>
-            </div>
-          </li>
-        ))}
-      </ul>
-
-      <div className="space-y-6">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setShowAddForm((s) => !s)}
-          className="min-h-11 w-full max-w-md border-border bg-transparent font-sans text-xs uppercase tracking-[0.18em] text-foreground shadow-none transition-colors hover:border-account-gold-accent hover:bg-account-order-stripe/80 hover:text-foreground sm:w-auto"
-        >
-          <Plus className="h-4 w-4 text-account-gold-accent" aria-hidden />
-          Add New Address
-        </Button>
-
-        <ExpandPanel open={showAddForm}>
-          <form
-            inert={!showAddForm ? true : undefined}
-            onSubmit={saveNewAddress}
-            className="max-w-xl space-y-5 border-t border-account-gold-accent pt-8"
-          >
-            <div className="space-y-2">
-              <Label htmlFor="addr-street" className={authLabelClass}>
-                Street
-              </Label>
-              <Input
-                id="addr-street"
-                value={street}
-                onChange={(e) => setStreet(e.target.value)}
-                autoComplete="street-address"
-                className={accountFieldClass}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="addr-city" className={authLabelClass}>
-                  City
-                </Label>
-                <Input
-                  id="addr-city"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  autoComplete="address-level2"
-                  className={accountFieldClass}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="addr-postal" className={authLabelClass}>
-                  Postal code
-                </Label>
-                <Input
-                  id="addr-postal"
-                  value={postalCode}
-                  onChange={(e) => setPostalCode(e.target.value)}
-                  autoComplete="postal-code"
-                  className={accountFieldClass}
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="addr-country" className={authLabelClass}>
-                Country
-              </Label>
-              <Select value={country} onValueChange={setCountry}>
-                <SelectTrigger id="addr-country" className={accountSelectTriggerClass}>
-                  <SelectValue placeholder="Country" />
-                </SelectTrigger>
-                <SelectContent className="border-border">
-                  {ADDRESS_COUNTRIES.map((c) => (
-                    <SelectItem key={c} value={c}>
-                      {c}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-              <Button type="submit" className={cn(authPrimaryButtonClass, "w-full sm:w-auto sm:min-w-[11rem]")}>
-                Save Address
-              </Button>
-              <button
-                type="button"
-                className={goldLinkClass}
-                onClick={() => {
-                  setShowAddForm(false)
-                  setStreet("")
-                  setCity("")
-                  setPostalCode("")
-                  setCountry(ADDRESS_COUNTRIES[0])
-                }}
               >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </ExpandPanel>
-      </div>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                  <address className="not-italic text-sm leading-relaxed text-foreground">
+                    {formatAddressLines(addr).map((line) => (
+                      <span key={line} className="block">
+                        {line}
+                      </span>
+                    ))}
+                  </address>
+                  <div className="flex shrink-0 flex-col gap-3 sm:items-end">
+                    {addr.isDefault ? (
+                      <span className="inline-flex w-fit items-center rounded-sm border border-account-gold-accent/50 bg-account-gold-accent/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-account-gold-accent">
+                        Default
+                      </span>
+                    ) : (
+                      <button type="button" className={goldLinkClass} onClick={() => void setDefault(addr.id)}>
+                        Set as default
+                      </button>
+                    )}
+                    <button type="button" className={mutedLinkClass} onClick={() => void removeAddress(addr.id)}>
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          <div className="space-y-6">
+            {addresses.length < 2 ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setShowAddForm((s) => !s)}
+                className="min-h-11 w-full max-w-md border-border bg-transparent font-sans text-xs uppercase tracking-[0.18em] text-foreground shadow-none transition-colors hover:border-account-gold-accent hover:bg-account-order-stripe/80 hover:text-foreground sm:w-auto"
+              >
+                <Plus className="h-4 w-4 text-account-gold-accent" aria-hidden />
+                Add New Address
+              </Button>
+            ) : null}
+
+            <ExpandPanel open={showAddForm}>
+              <form
+                inert={!showAddForm ? true : undefined}
+                onSubmit={(e) => void saveNewAddress(e)}
+                className="max-w-xl space-y-5 border-t border-account-gold-accent pt-8"
+              >
+                <div className="space-y-2">
+                  <Label htmlFor="addr-street" className={authLabelClass}>
+                    Street name
+                  </Label>
+                  <Input
+                    id="addr-street"
+                    value={street}
+                    onChange={(e) => setStreet(e.target.value)}
+                    autoComplete="address-line1"
+                    className={accountFieldClass}
+                  />
+                </div>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="addr-building" className={authLabelClass}>
+                      Building number
+                    </Label>
+                    <Input
+                      id="addr-building"
+                      value={building}
+                      onChange={(e) => setBuilding(e.target.value)}
+                      className={accountFieldClass}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="addr-apartment" className={authLabelClass}>
+                      Apartment / Floor
+                    </Label>
+                    <Input
+                      id="addr-apartment"
+                      value={apartment}
+                      onChange={(e) => setApartment(e.target.value)}
+                      className={accountFieldClass}
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="addr-city" className={authLabelClass}>
+                      City
+                    </Label>
+                    <Input
+                      id="addr-city"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      autoComplete="address-level2"
+                      className={accountFieldClass}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="addr-postal" className={authLabelClass}>
+                      Postal code
+                    </Label>
+                    <Input
+                      id="addr-postal"
+                      value={postalCode}
+                      onChange={(e) => setPostalCode(e.target.value)}
+                      autoComplete="postal-code"
+                      className={accountFieldClass}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="addr-country" className={authLabelClass}>
+                    Country
+                  </Label>
+                  <Select value={country} onValueChange={setCountry}>
+                    <SelectTrigger id="addr-country" className={accountSelectTriggerClass}>
+                      <SelectValue placeholder="Country" />
+                    </SelectTrigger>
+                    <SelectContent className="border-border">
+                      {ADDRESS_COUNTRIES.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {c}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+                  <Button
+                    type="submit"
+                    disabled={saving}
+                    className={cn(authPrimaryButtonClass, "w-full sm:w-auto sm:min-w-[11rem]")}
+                  >
+                    {saving ? "Saving…" : "Save Address"}
+                  </Button>
+                  <button
+                    type="button"
+                    className={goldLinkClass}
+                    onClick={() => {
+                      setShowAddForm(false)
+                      setStreet("")
+                      setBuilding("")
+                      setApartment("")
+                      setCity("")
+                      setPostalCode("")
+                      setCountry("Poland")
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </ExpandPanel>
+          </div>
+        </>
+      )}
     </AccountSectionCard>
   )
 }
+
 
 export function AccountPageClient() {
   const router = useRouter()
@@ -838,10 +1047,9 @@ export function AccountPageClient() {
                 ) : null}
                 {activeTab === "profile" ? (
                   <ProfileSection
-                    email={email}
-                    initialFirst={profileFirst}
-                    initialLast={profileLast}
-                    initialPhone="+1 (212) 555-0199"
+                    sessionEmail={email}
+                    sessionFirst={profileFirst}
+                    sessionLast={profileLast}
                   />
                 ) : null}
                 {activeTab === "addresses" ? <AddressesSection /> : null}
@@ -863,6 +1071,7 @@ export function AccountPageClient() {
         </div>
       </div>
       <Footer />
+      <Toaster richColors position="top-center" />
     </main>
   )
 }

@@ -19,15 +19,6 @@ export type MockOrder = {
   estimatedDelivery: string
 }
 
-export type MockSavedAddress = {
-  id: string
-  street: string
-  city: string
-  postalCode: string
-  country: string
-  isDefault: boolean
-}
-
 /** Swap to `[]` to preview the empty orders state. */
 export const MOCK_ORDERS: MockOrder[] = [
   {
@@ -125,30 +116,3 @@ export const MOCK_ORDERS: MockOrder[] = [
   },
 ]
 
-export const MOCK_ADDRESSES: MockSavedAddress[] = [
-  {
-    id: "a1",
-    street: "12 West 56th Street, Apt 9B",
-    city: "New York",
-    postalCode: "10019",
-    country: "United States",
-    isDefault: true,
-  },
-  {
-    id: "a2",
-    street: "48 Rue de Rivoli",
-    city: "Paris",
-    postalCode: "75004",
-    country: "France",
-    isDefault: false,
-  },
-]
-
-export const ADDRESS_COUNTRIES = [
-  "United States",
-  "France",
-  "Morocco",
-  "United Kingdom",
-  "Italy",
-  "Canada",
-] as const

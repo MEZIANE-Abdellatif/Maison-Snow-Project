@@ -2,7 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { signIn, useSession } from "next-auth/react"
 import { Check, Loader2, Lock } from "lucide-react"
 
@@ -26,6 +26,7 @@ import {
   type CheckoutOrderPayload,
 } from "@/components/checkout/checkout-payment-step"
 import { InPostGeowidget, INPOST_MOCK_LOCKERS } from "@/components/InPostGeowidget"
+import type { UserAddress } from "@/lib/address-api"
 
 const STEPS = [
   { id: "email", label: "Email" },
@@ -258,8 +259,33 @@ export function CheckoutPageClient() {
   const [lockerTouched, setLockerTouched] = useState(false)
   const [signInError, setSignInError] = useState<string | null>(null)
   const [paymentMountKey, setPaymentMountKey] = useState(0)
+  const [savedAddresses, setSavedAddresses] = useState<UserAddress[]>([])
+  const [usingSavedAddress, setUsingSavedAddress] = useState(false)
+  const [activeSavedAddressId, setActiveSavedAddressId] = useState<string | null>(null)
 
   const isAuthenticated = sessionStatus === "authenticated" && Boolean(session?.user)
+
+  const applySavedAddress = useCallback((addr: UserAddress) => {
+    setStreetName(addr.street)
+    setBuildingNumber(addr.building)
+    setApartment(addr.apartment)
+    setCity(addr.city)
+    setPostal(addr.postalCode)
+    setUsingSavedAddress(true)
+    setActiveSavedAddressId(addr.id)
+    setAddressTouched({})
+  }, [])
+
+  const clearSavedAddressForm = useCallback(() => {
+    setStreetName("")
+    setBuildingNumber("")
+    setApartment("")
+    setCity("")
+    setPostal("")
+    setUsingSavedAddress(false)
+    setActiveSavedAddressId(null)
+    setAddressTouched({})
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated || !session?.user) return
@@ -273,6 +299,32 @@ export function CheckoutPageClient() {
     }
     setStep(1)
   }, [isAuthenticated, session])
+
+  useEffect(() => {
+    if (!isAuthenticated || step !== 1) return
+
+    let cancelled = false
+
+    async function loadSavedAddresses() {
+      try {
+        const res = await fetch("/api/users/addresses")
+        if (!res.ok || cancelled) return
+        const data = (await res.json()) as UserAddress[]
+        if (cancelled) return
+        setSavedAddresses(data)
+        if (data.length === 0) return
+        const defaultAddr = data.find((a) => a.isDefault) ?? data[0]
+        applySavedAddress(defaultAddr)
+      } catch {
+        if (!cancelled) setSavedAddresses([])
+      }
+    }
+
+    void loadSavedAddresses()
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated, step, applySavedAddress])
 
   const subtotal = useMemo(
     () => lines.reduce((s, l) => s + l.unitPrice * l.quantity, 0),
@@ -661,6 +713,32 @@ export function CheckoutPageClient() {
 
                     <div>
                       <h3 className="font-serif text-lg text-foreground mb-4">Delivery address</h3>
+                      {usingSavedAddress ? (
+                        <p className="mb-4 text-sm text-muted-foreground">
+                          Using your saved address.{" "}
+                          <button
+                            type="button"
+                            onClick={clearSavedAddressForm}
+                            className="text-gold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 rounded-sm"
+                          >
+                            Change
+                          </button>
+                        </p>
+                      ) : null}
+                      {savedAddresses.length === 2 ? (
+                        <p className="mb-4 text-sm text-muted-foreground">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const other = savedAddresses.find((a) => a.id !== activeSavedAddressId)
+                              if (other) applySavedAddress(other)
+                            }}
+                            className="text-gold underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/50 rounded-sm"
+                          >
+                            Use other address
+                          </button>
+                        </p>
+                      ) : null}
                       <div className="space-y-4">
                         <AddressField
                           id="street-name"
