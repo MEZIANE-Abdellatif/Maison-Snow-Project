@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useMemo, useState } from "react"
 import { Minus, Plus } from "lucide-react"
 
+import { AddedToCartModal } from "@/components/shop/added-to-cart-modal"
 import { ShopProductCard } from "@/components/shop/shop-product-card"
 import { useCart } from "@/contexts/cart-context"
 import { CATEGORY_TAGLINES, formatPrice, type ShopProduct } from "@/lib/shop-data"
@@ -24,6 +25,7 @@ export function ProductDetailClient({
     product.hasSizes ? (product.sizes[0] ?? null) : null,
   )
   const [qty, setQty] = useState(1)
+  const [addedProduct, setAddedProduct] = useState<ShopProduct | null>(null)
 
   const activeSrc = product.images[imageIndex] ?? product.image
 
@@ -40,6 +42,10 @@ export function ProductDetailClient({
 
   return (
     <>
+      <AddedToCartModal
+        product={addedProduct}
+        onClose={() => setAddedProduct(null)}
+      />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-24 sm:pt-28 pb-12 lg:pb-16">
         <div className="flex flex-col lg:flex-row lg:items-start gap-10 lg:gap-16">
           {/* Gallery — full width on mobile, 60% desktop */}
@@ -198,13 +204,14 @@ export function ProductDetailClient({
                     ? `Add to cart, ${sizeLabel}, quantity ${qty}`
                     : `Add to cart, quantity ${qty}`
                 }
-                onClick={() =>
+                onClick={() => {
                   addProduct({
                     product,
                     quantity: qty,
                     size: product.hasSizes ? size : null,
                   })
-                }
+                  setAddedProduct(product)
+                }}
               >
                 Add to cart
               </button>
