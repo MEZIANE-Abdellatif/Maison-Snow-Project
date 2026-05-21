@@ -1,4 +1,5 @@
 import type { Metadata } from "next"
+import { Suspense } from "react"
 
 import { CheckoutPageClient } from "@/components/checkout/checkout-page-client"
 import { Footer } from "@/components/footer"
@@ -26,7 +27,15 @@ export default function CheckoutPage() {
   return (
     <main className="min-h-screen bg-background">
       <Navbar />
-      <CheckoutPageClient />
+      <Suspense
+        fallback={
+          <div className="flex min-h-[40vh] items-center justify-center px-4 text-sm text-muted-foreground">
+            Loading checkout…
+          </div>
+        }
+      >
+        <CheckoutPageClient />
+      </Suspense>
       <Footer />
     </main>
   )

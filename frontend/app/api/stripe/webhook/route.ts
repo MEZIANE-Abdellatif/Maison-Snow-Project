@@ -29,6 +29,37 @@ export async function POST(request: Request) {
   }
 
   try {
+    if (event.type === "checkout.session.completed") {
+      const checkoutSession = event.data.object as Stripe.Checkout.Session
+      const orderId = checkoutSession.metadata?.orderId
+      const paymentIntentId =
+        typeof checkoutSession.payment_intent === "string"
+          ? checkoutSession.payment_intent
+          : checkoutSession.payment_intent?.id
+
+      if (orderId && paymentIntentId) {
+        await prisma.order.updateMany({
+          where: { id: orderId },
+          data: {
+            paymentStatus: "PAID",
+            stripePaymentId: paymentIntentId,
+          },
+        })
+      }
+    }
+
+    if (event.type === "checkout.session.async_payment_failed") {
+      const checkoutSession = event.data.object as Stripe.Checkout.Session
+      const orderId = checkoutSession.metadata?.orderId
+
+      if (orderId) {
+        await prisma.order.updateMany({
+          where: { id: orderId },
+          data: { paymentStatus: "FAILED" },
+        })
+      }
+    }
+
     if (event.type === "payment_intent.succeeded") {
       const paymentIntent = event.data.object as Stripe.PaymentIntent
       const orderId = paymentIntent.metadata?.orderId

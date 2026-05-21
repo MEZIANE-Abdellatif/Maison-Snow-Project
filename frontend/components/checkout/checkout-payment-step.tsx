@@ -1,15 +1,10 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import {
-  Elements,
-  PaymentElement,
-  useElements,
-  useStripe,
-} from "@stripe/react-stripe-js"
+import { useCallback, useEffect, useState } from "react"
+import { PaymentElement, useCheckoutElements } from "@stripe/react-stripe-js/checkout"
 import { Loader2 } from "lucide-react"
 
-import { getStripe } from "@/lib/stripe-client"
+import { CheckoutStripeElements } from "@/components/checkout/checkout-stripe-elements"
 
 export type CheckoutOrderPayload = {
   orderId: string
@@ -31,76 +26,132 @@ export type CheckoutOrderPayload = {
 
 type CheckoutPaymentStepProps = {
   total: number
+  customerEmail: string
   buildOrderPayload: (stripePaymentId: string, orderId: string) => CheckoutOrderPayload
   onSuccess: () => void
   onBack: () => void
 }
 
+type SessionStatusResponse = {
+  status: string | null
+  payment_status: string | null
+  paymentIntentId: string | null
+  orderId: string | null
+  error?: string
+}
+
+async function fetchSessionStatus(sessionId: string): Promise<SessionStatusResponse> {
+  const res = await fetch(`/api/stripe/checkout-session/status?session_id=${encodeURIComponent(sessionId)}`)
+  const data = (await res.json()) as SessionStatusResponse
+  if (!res.ok) {
+    throw new Error(data.error ?? "Could not verify payment")
+  }
+  return data
+}
+
 function PaymentForm({
+  checkoutSessionId,
   orderId,
   buildOrderPayload,
   onSuccess,
   onBack,
-}: Omit<CheckoutPaymentStepProps, "total"> & { orderId: string }) {
-  const stripe = useStripe()
-  const elements = useElements()
+}: Omit<CheckoutPaymentStepProps, "total" | "customerEmail"> & {
+  checkoutSessionId: string
+  orderId: string
+}) {
+  const checkoutState = useCheckoutElements()
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isPaying, setIsPaying] = useState(false)
 
+  const completeOrderIfPaid = useCallback(
+    async (sessionId: string, resolvedOrderId: string) => {
+      const status = await fetchSessionStatus(sessionId)
+
+      if (status.status !== "complete" || status.payment_status !== "paid") {
+        setErrorMessage("Payment was not completed. Please try again.")
+        return false
+      }
+
+      if (!status.paymentIntentId) {
+        setErrorMessage("Payment succeeded but could not be verified. Contact support.")
+        return false
+      }
+
+      const payload = buildOrderPayload(status.paymentIntentId, resolvedOrderId)
+
+      const orderRes = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: payload.orderId,
+          email: payload.email,
+          userId: payload.userId,
+          shippingName: payload.shippingName,
+          shippingPhone: payload.shippingPhone,
+          shippingAddress: payload.shippingAddress,
+          shippingCost: payload.shippingCost,
+          items: payload.items,
+          stripePaymentId: payload.stripePaymentId,
+          paymentStatus: "PAID",
+        }),
+      })
+
+      if (!orderRes.ok) {
+        const data = (await orderRes.json().catch(() => ({}))) as { error?: string }
+        setErrorMessage(data.error ?? "Payment succeeded but order could not be created. Contact support.")
+        return false
+      }
+
+      onSuccess()
+      return true
+    },
+    [buildOrderPayload, onSuccess],
+  )
+
   const handlePay = async () => {
-    if (!stripe || !elements) return
+    if (checkoutState.type !== "success") return
 
     setIsPaying(true)
     setErrorMessage(null)
 
-    const { error, paymentIntent } = await stripe.confirmPayment({
-      elements,
-      redirect: "if_required",
-      confirmParams: {
-        return_url: `${window.location.origin}/checkout`,
-      },
+    const { checkout } = checkoutState
+    const confirmResult = await checkout.confirm({
+      returnUrl: `${window.location.origin}/checkout`,
     })
 
-    if (error) {
-      setErrorMessage(error.message ?? "Payment failed. Please try again.")
+    if (confirmResult.type === "error") {
+      setErrorMessage(confirmResult.error.message ?? "Payment failed. Please try again.")
       setIsPaying(false)
       return
     }
 
-    if (paymentIntent?.status !== "succeeded") {
-      setErrorMessage("Payment was not completed. Please try again.")
+    try {
+      await completeOrderIfPaid(checkoutSessionId, orderId)
+    } catch {
+      setErrorMessage("Could not verify payment. Please try again.")
+    } finally {
       setIsPaying(false)
-      return
     }
-
-    const payload = buildOrderPayload(paymentIntent.id, orderId)
-
-    const orderRes = await fetch("/api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id: payload.orderId,
-        email: payload.email,
-        userId: payload.userId,
-        shippingName: payload.shippingName,
-        shippingPhone: payload.shippingPhone,
-        shippingAddress: payload.shippingAddress,
-        shippingCost: payload.shippingCost,
-        items: payload.items,
-        stripePaymentId: payload.stripePaymentId,
-        paymentStatus: "PAID",
-      }),
-    })
-
-    if (!orderRes.ok) {
-      const data = (await orderRes.json().catch(() => ({}))) as { error?: string }
-      setErrorMessage(data.error ?? "Payment succeeded but order could not be created. Contact support.")
-      setIsPaying(false)
-      return
-    }
-
-    onSuccess()
   }
+
+  if (checkoutState.type === "loading") {
+    return (
+      <div className="flex min-h-24 items-center justify-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-5 w-5 animate-spin text-gold" aria-hidden />
+        <span>Loading payment form…</span>
+      </div>
+    )
+  }
+
+  if (checkoutState.type === "error") {
+    return (
+      <p className="text-sm text-destructive" role="alert">
+        {checkoutState.error.message}
+      </p>
+    )
+  }
+
+  const checkoutReady = checkoutState.type === "success"
 
   return (
     <div className="space-y-8">
@@ -131,7 +182,7 @@ function PaymentForm({
         <button
           type="button"
           onClick={() => void handlePay()}
-          disabled={!stripe || !elements || isPaying}
+          disabled={!checkoutReady || isPaying}
           className="flex min-h-12 flex-1 items-center justify-center gap-2 bg-primary px-6 py-3 text-xs tracking-widest uppercase text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-40"
         >
           {isPaying ? (
@@ -154,63 +205,72 @@ function createCheckoutOrderId() {
 
 export function CheckoutPaymentStep({
   total,
+  customerEmail,
   buildOrderPayload,
   onSuccess,
   onBack,
 }: CheckoutPaymentStepProps) {
   const [orderId] = useState(createCheckoutOrderId)
   const [clientSecret, setClientSecret] = useState<string | null>(null)
+  const [checkoutSessionId, setCheckoutSessionId] = useState<string | null>(null)
   const [initError, setInitError] = useState<string | null>(null)
-  const [isLoadingIntent, setIsLoadingIntent] = useState(true)
+  const [isLoadingSession, setIsLoadingSession] = useState(true)
 
   useEffect(() => {
     let cancelled = false
 
-    async function createIntent() {
-      setIsLoadingIntent(true)
+    async function createSession() {
+      setIsLoadingSession(true)
       setInitError(null)
 
       try {
-        const res = await fetch("/api/stripe/payment-intent", {
+        const res = await fetch("/api/stripe/checkout-session", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: total,
             currency: "pln",
             orderId,
+            customerEmail,
           }),
         })
 
-        const data = (await res.json()) as { clientSecret?: string; error?: string }
+        const data = (await res.json()) as {
+          clientSecret?: string
+          sessionId?: string
+          error?: string
+        }
 
         if (cancelled) return
 
-        if (!res.ok || !data.clientSecret) {
+        if (!res.ok || !data.clientSecret || !data.sessionId) {
           setInitError(data.error ?? "Could not start payment. Please try again.")
           setClientSecret(null)
+          setCheckoutSessionId(null)
           return
         }
 
         setClientSecret(data.clientSecret)
+        setCheckoutSessionId(data.sessionId)
       } catch {
         if (!cancelled) {
           setInitError("Could not start payment. Please try again.")
         }
       } finally {
         if (!cancelled) {
-          setIsLoadingIntent(false)
+          setIsLoadingSession(false)
         }
       }
     }
 
-    void createIntent()
+    void createSession()
 
     return () => {
       cancelled = true
     }
-  }, [total, orderId])
+  }, [total, orderId, customerEmail])
 
-  if (isLoadingIntent) {
+  if (isLoadingSession) {
     return (
       <div className="flex min-h-32 items-center justify-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="h-5 w-5 animate-spin text-gold" aria-hidden />
@@ -219,7 +279,7 @@ export function CheckoutPaymentStep({
     )
   }
 
-  if (initError || !clientSecret) {
+  if (initError || !clientSecret || !checkoutSessionId) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-destructive" role="alert">
@@ -237,29 +297,15 @@ export function CheckoutPaymentStep({
   }
 
   return (
-    <Elements
-      stripe={getStripe()}
-      options={{
-        clientSecret,
-        appearance: {
-          theme: "stripe",
-          variables: {
-            colorPrimary: "#C9A84C",
-            colorBackground: "#F5EFE0",
-            colorText: "#0D0D0D",
-            fontFamily: "inherit",
-            borderRadius: "4px",
-          },
-        },
-      }}
-    >
+    <CheckoutStripeElements clientSecret={clientSecret}>
       <PaymentForm
+        checkoutSessionId={checkoutSessionId}
         orderId={orderId}
         buildOrderPayload={buildOrderPayload}
         onSuccess={onSuccess}
         onBack={onBack}
       />
-    </Elements>
+    </CheckoutStripeElements>
   )
 }
 

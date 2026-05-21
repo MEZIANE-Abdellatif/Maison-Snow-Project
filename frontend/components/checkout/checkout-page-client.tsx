@@ -2,6 +2,7 @@
 
 import Image from "next/image"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import { signIn, useSession } from "next-auth/react"
 import { Check, Loader2, Lock } from "lucide-react"
@@ -238,6 +239,8 @@ function ReadOnlyCartLines() {
 }
 
 export function CheckoutPageClient() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
   const { lines, removeLine } = useCart()
   const { data: session, status: sessionStatus } = useSession()
   const [step, setStep] = useState(0)
@@ -344,6 +347,127 @@ export function CheckoutPageClient() {
     return `${formatPrice(FEE_HOME_POCHTA)}`
   }, [step, deliveryMode, homeCarrier])
   const total = step < 1 ? subtotal : subtotal + shippingFee
+
+  const buildOrderPayload = useCallback(
+    (stripePaymentId: string, orderId: string): CheckoutOrderPayload => ({
+      orderId,
+      email: email.trim().toLowerCase(),
+      userId: session?.user?.id,
+      shippingName: fullName.trim(),
+      shippingPhone: phone.trim(),
+      shippingAddress: (() => {
+        if (deliveryMode === "parcel_locker") {
+          const locker = INPOST_MOCK_LOCKERS.find((l) => l.id === selectedLockerId)
+          return locker
+            ? formatParcelLockerShippingAddress(locker.name, locker.address)
+            : ""
+        }
+        return formatShippingAddress(streetName, buildingNumber, apartment, city, postal)
+      })(),
+      shippingCost: shippingFee,
+      stripePaymentId,
+      items: lines.map((line) => ({
+        productId: line.productId,
+        productName: line.name,
+        price: line.unitPrice,
+        size: line.size ?? "One size",
+        quantity: line.quantity,
+      })),
+    }),
+    [
+      email,
+      session?.user?.id,
+      fullName,
+      phone,
+      deliveryMode,
+      selectedLockerId,
+      streetName,
+      buildingNumber,
+      apartment,
+      city,
+      postal,
+      shippingFee,
+      lines,
+    ],
+  )
+
+  useEffect(() => {
+    const returnSessionId = searchParams.get("session_id")
+    if (!returnSessionId || lines.length === 0) return
+
+    const sessionId = returnSessionId
+    let cancelled = false
+
+    async function completeReturn() {
+      try {
+        const res = await fetch(
+          `/api/stripe/checkout-session/status?session_id=${encodeURIComponent(sessionId)}`,
+        )
+        const data = (await res.json()) as {
+          status: string | null
+          payment_status: string | null
+          paymentIntentId: string | null
+          orderId: string | null
+          error?: string
+        }
+
+        if (cancelled) return
+
+        if (
+          data.status !== "complete" ||
+          data.payment_status !== "paid" ||
+          !data.paymentIntentId ||
+          !data.orderId
+        ) {
+          setStep(2)
+          router.replace("/checkout")
+          return
+        }
+
+        const payload = buildOrderPayload(data.paymentIntentId, data.orderId)
+        const orderRes = await fetch("/api/orders", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: payload.orderId,
+            email: payload.email,
+            userId: payload.userId,
+            shippingName: payload.shippingName,
+            shippingPhone: payload.shippingPhone,
+            shippingAddress: payload.shippingAddress,
+            shippingCost: payload.shippingCost,
+            items: payload.items,
+            stripePaymentId: payload.stripePaymentId,
+            paymentStatus: "PAID",
+          }),
+        })
+
+        if (!orderRes.ok) {
+          setStep(2)
+          router.replace("/checkout")
+          return
+        }
+
+        for (const line of lines) {
+          removeLine(line.lineId)
+        }
+        setPaymentMountKey((key) => key + 1)
+        setStep(3)
+        router.replace("/checkout")
+      } catch {
+        if (!cancelled) {
+          setStep(2)
+          router.replace("/checkout")
+        }
+      }
+    }
+
+    void completeReturn()
+
+    return () => {
+      cancelled = true
+    }
+  }, [searchParams, lines, removeLine, router, buildOrderPayload])
 
   const emailValid = emailLooksValid(email)
   /** Guest path still requires a valid email; link stays off until the address is complete. */
@@ -854,42 +978,17 @@ export function CheckoutPageClient() {
               <CheckoutPaymentStep
                 key={paymentMountKey}
                 total={total}
-                onBack={() => setStep(1)}
-                buildOrderPayload={(stripePaymentId, orderId): CheckoutOrderPayload => ({
-                  orderId,
-                  email: email.trim().toLowerCase(),
-                  userId: session?.user?.id,
-                  shippingName: fullName.trim(),
-                  shippingPhone: phone.trim(),
-                  shippingAddress: (() => {
-                    if (deliveryMode === "parcel_locker") {
-                      const locker = INPOST_MOCK_LOCKERS.find((l) => l.id === selectedLockerId)
-                      return locker
-                        ? formatParcelLockerShippingAddress(locker.name, locker.address)
-                        : ""
-                    }
-                    return formatShippingAddress(
-                      streetName,
-                      buildingNumber,
-                      apartment,
-                      city,
-                      postal,
-                    )
-                  })(),
-                  shippingCost: shippingFee,
-                  stripePaymentId,
-                  items: lines.map((line) => ({
-                    productId: line.productId,
-                    productName: line.name,
-                    price: line.unitPrice,
-                    size: line.size ?? "One size",
-                    quantity: line.quantity,
-                  })),
-                })}
+                customerEmail={email.trim().toLowerCase()}
+                onBack={() => {
+                  setPaymentMountKey((key) => key + 1)
+                  setStep(1)
+                }}
+                buildOrderPayload={buildOrderPayload}
                 onSuccess={() => {
                   for (const line of lines) {
                     removeLine(line.lineId)
                   }
+                  setPaymentMountKey((key) => key + 1)
                   setStep(3)
                 }}
               />
