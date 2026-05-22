@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { useCallback, useEffect, useState } from "react"
 import { Menu, X, Search, ShoppingBag, User } from "lucide-react"
 
 import { signOut, useSession } from "next-auth/react"
@@ -15,16 +16,74 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
+const NAVBAR_OFFSET_PX = 80
+
+const HOME_SECTION_LINKS = [
+  { hash: "categories", label: "Collections" },
+  { hash: "new-arrivals", label: "New Arrivals" },
+  { hash: "story", label: "Our Story" },
+  { hash: "contact", label: "Contact" },
+] as const
+
+const sectionLinkClass =
+  "text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors"
+
+const mobileSectionLinkClass =
+  "block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
+
+function scrollToHomeSection(sectionId: string) {
+  const el = document.getElementById(sectionId)
+  if (!el) return
+
+  const top = el.getBoundingClientRect().top + window.scrollY - NAVBAR_OFFSET_PX
+  window.scrollTo({ top, behavior: "smooth" })
+}
+
 export function Navbar() {
+  const router = useRouter()
+  const pathname = usePathname()
   const [isOpen, setIsOpen] = useState(false)
   const { count } = useCart()
   const { data: session, status } = useSession()
   const isLoggedIn = status === "authenticated" && Boolean(session?.user)
   const displayFirstName = session?.user?.firstName?.trim() || "Guest"
+  const isHome = pathname === "/"
 
   const handleSignOut = () => {
     void signOut({ callbackUrl: "/" })
   }
+
+  const scrollFromUrlHash = useCallback(() => {
+    const hash = window.location.hash.replace(/^#/, "")
+    if (!hash) return
+    scrollToHomeSection(hash)
+  }, [])
+
+  useEffect(() => {
+    if (!isHome) return
+
+    scrollFromUrlHash()
+    const timeoutId = window.setTimeout(scrollFromUrlHash, 150)
+
+    return () => {
+      window.clearTimeout(timeoutId)
+    }
+  }, [isHome, pathname, scrollFromUrlHash])
+
+  const navigateToHomeSection = useCallback(
+    (sectionId: string) => {
+      setIsOpen(false)
+
+      if (isHome) {
+        scrollToHomeSection(sectionId)
+        window.history.pushState(null, "", `#${sectionId}`)
+        return
+      }
+
+      router.push(`/#${sectionId}`)
+    },
+    [isHome, router],
+  )
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm border-b border-border">
@@ -51,18 +110,19 @@ export function Navbar() {
 
           {/* Desktop nav — centered in bar */}
           <div className="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 lg:flex items-center gap-6 xl:gap-8">
-            <Link href="#categories" className="text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors">
-              Collections
-            </Link>
-            <Link href="#new-arrivals" className="text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors">
-              New Arrivals
-            </Link>
-            <Link href="#story" className="text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors">
-              Our Story
-            </Link>
-            <Link href="#contact" className="text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors">
-              Contact
-            </Link>
+            {HOME_SECTION_LINKS.map(({ hash, label }) => (
+              <Link
+                key={hash}
+                href={isHome ? `#${hash}` : `/#${hash}`}
+                className={sectionLinkClass}
+                onClick={(e) => {
+                  e.preventDefault()
+                  navigateToHomeSection(hash)
+                }}
+              >
+                {label}
+              </Link>
+            ))}
           </div>
 
           {/* Icons (right) */}
@@ -147,34 +207,19 @@ export function Navbar() {
       {isOpen && (
         <div className="lg:hidden bg-background border-t border-border">
           <div className="px-4 py-6 space-y-4">
-            <Link
-              href="#categories"
-              className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
-              onClick={() => setIsOpen(false)}
-            >
-              Collections
-            </Link>
-            <Link
-              href="#new-arrivals"
-              className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
-              onClick={() => setIsOpen(false)}
-            >
-              New Arrivals
-            </Link>
-            <Link
-              href="#story"
-              className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
-              onClick={() => setIsOpen(false)}
-            >
-              Our Story
-            </Link>
-            <Link
-              href="#contact"
-              className="block text-sm tracking-widest uppercase text-foreground hover:text-gold transition-colors py-2"
-              onClick={() => setIsOpen(false)}
-            >
-              Contact
-            </Link>
+            {HOME_SECTION_LINKS.map(({ hash, label }) => (
+              <Link
+                key={hash}
+                href={isHome ? `#${hash}` : `/#${hash}`}
+                className={mobileSectionLinkClass}
+                onClick={(e) => {
+                  e.preventDefault()
+                  navigateToHomeSection(hash)
+                }}
+              >
+                {label}
+              </Link>
+            ))}
           </div>
         </div>
       )}

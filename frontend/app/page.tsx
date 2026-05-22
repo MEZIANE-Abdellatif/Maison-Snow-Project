@@ -4,6 +4,7 @@ import { Categories } from "@/components/categories"
 import { NewArrivals } from "@/components/new-arrivals"
 import { BrandStory } from "@/components/brand-story"
 import { TrustBar } from "@/components/trust-bar"
+import { ContactForm } from "@/components/contact-form"
 import { Newsletter } from "@/components/newsletter"
 import { Footer } from "@/components/footer"
 
@@ -17,6 +18,7 @@ export default function Home() {
       <BrandStory />
       <TrustBar />
       <Newsletter />
+      <ContactForm />
       <Footer />
     </main>
   )
