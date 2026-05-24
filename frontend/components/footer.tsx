@@ -1,5 +1,7 @@
 import Link from "next/link"
 
+import { DeveloperInfoModal } from "@/components/developer-info-modal"
+
 export function Footer() {
   return (
     <footer id="contact" className="bg-primary text-primary-foreground">
@@ -97,7 +99,8 @@ export function Footer() {
           <p className="text-primary-foreground/50 text-xs">
             © 2026 Maison Snow. All rights reserved.
           </p>
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center justify-center gap-4 md:justify-end md:gap-6">
+            <DeveloperInfoModal />
             <Link href="#" className="text-primary-foreground/50 hover:text-gold transition-colors text-xs">Terms of Service</Link>
             <Link href="#" className="text-primary-foreground/50 hover:text-gold transition-colors text-xs">Privacy Policy</Link>
             <Link href="#" className="text-primary-foreground/50 hover:text-gold transition-colors text-xs">Cookie Policy</Link>
